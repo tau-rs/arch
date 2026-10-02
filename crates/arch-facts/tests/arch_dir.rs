@@ -224,6 +224,9 @@ fn archive_moves_the_session_folder_to_refs_notes_arch_and_restores_it() {
     let (tmp, arch) = arch_in_tmp();
     let repo = tmp.path();
     git(repo, &["init", "-q", "-b", "main"]);
+    // The notes archive commits as whoever runs arch; CI runners have no global identity.
+    git(repo, &["config", "user.name", "t"]);
+    git(repo, &["config", "user.email", "t@x"]);
     git(
         repo,
         &[
