@@ -1,0 +1,18 @@
+[package]
+name = "arch-session"
+description = "arch · plan, scheduler, gate runner, judge, context pack, thread, resolve element"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arch-facts.workspace = true
+arch-views.workspace = true
+arch-driver.workspace = true
+arch-forge.workspace = true
+anyhow.workspace = true

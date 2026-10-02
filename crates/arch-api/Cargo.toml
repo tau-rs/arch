@@ -1,0 +1,20 @@
+[package]
+name = "arch-api"
+description = "arch · JSON-RPC + MCP surface, one method set"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arch-facts.workspace = true
+arch-analyze.workspace = true
+arch-views.workspace = true
+arch-session.workspace = true
+arch-forge.workspace = true
+arch-driver.workspace = true
+anyhow.workspace = true

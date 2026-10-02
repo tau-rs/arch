@@ -1,0 +1,15 @@
+[package]
+name = "arch-analyze"
+description = "arch · watcher, cargo, git and rust-analyzer readers producing fact deltas"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arch-facts.workspace = true
+anyhow.workspace = true

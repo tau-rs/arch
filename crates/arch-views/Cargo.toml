@@ -1,0 +1,15 @@
+[package]
+name = "arch-views"
+description = "arch · pure views over the store: layouts, fold, Reach, overlays, findings, impact, checklist, What's new"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+arch-facts.workspace = true
+anyhow.workspace = true
