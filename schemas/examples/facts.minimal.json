@@ -1,0 +1,196 @@
+{
+  "schema_version": 0,
+  "repo": {
+    "name": "smallsvc",
+    "commit": "0000000000000000000000000000000000000000",
+    "unit": {
+      "id": "unit:smallsvc",
+      "main_target": "bin:smallsvc"
+    }
+  },
+  "analyzer": {
+    "name": "arch-analyze",
+    "version": "0.0.0+ra_ap_0.0.356"
+  },
+  "crates": [
+    {
+      "name": "smallsvc",
+      "status": {
+        "kind": "analyzed"
+      },
+      "targets": [
+        "bin:smallsvc",
+        "lib"
+      ]
+    },
+    {
+      "name": "xtask",
+      "status": {
+        "kind": "not-analyzed",
+        "reason": "tool bin"
+      },
+      "targets": [
+        "bin:xtask"
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "smallsvc::main#fn",
+      "kind": "fn",
+      "name": "main",
+      "file": "src/main.rs",
+      "span": {
+        "line": 3,
+        "col": 1,
+        "end_line": 9,
+        "end_col": 2
+      },
+      "crate": "smallsvc",
+      "module": "",
+      "visibility": "private",
+      "flags": {
+        "entry": true
+      },
+      "scope": "unit:smallsvc"
+    },
+    {
+      "id": "smallsvc::routes::health#fn",
+      "kind": "fn",
+      "name": "health",
+      "file": "src/routes.rs",
+      "span": {
+        "line": 4,
+        "col": 1,
+        "end_line": 6,
+        "end_col": 2
+      },
+      "crate": "smallsvc",
+      "module": "routes",
+      "visibility": "pub",
+      "scope": "unit:smallsvc"
+    }
+  ],
+  "links": [
+    {
+      "from": "smallsvc::main#fn",
+      "to": {
+        "item": "smallsvc::routes::health#fn"
+      },
+      "kind": "routes",
+      "confidence": "resolved",
+      "witness": {
+        "kind": "span",
+        "file": "src/main.rs",
+        "line": 6,
+        "col": 10
+      }
+    },
+    {
+      "from": "smallsvc::routes::health#fn",
+      "to": {
+        "table": "heartbeats"
+      },
+      "kind": "reads",
+      "confidence": "guessed",
+      "witness": {
+        "kind": "span",
+        "file": "src/routes.rs",
+        "line": 5
+      },
+      "flags": {
+        "access": "write"
+      },
+      "reason": "sqlx::query! string literal names the table"
+    }
+  ],
+  "ports": [
+    {
+      "id": "port:http:GET /health",
+      "kind": "http",
+      "name": "GET /health",
+      "side": "driving",
+      "section": "platform-services",
+      "witness": {
+        "kind": "span",
+        "file": "src/main.rs",
+        "line": 6
+      }
+    },
+    {
+      "id": "port:sql:postgres",
+      "kind": "sql",
+      "name": "postgres",
+      "side": "driven",
+      "section": "data-stores",
+      "external": "external:crate:sqlx",
+      "witness": {
+        "kind": "declared",
+        "file": "Cargo.toml",
+        "line": 12
+      }
+    }
+  ],
+  "externals": [
+    {
+      "id": "external:crate:sqlx",
+      "name": "sqlx",
+      "kind": "crate",
+      "touched": [
+        "sqlx::query",
+        "sqlx::PgPool"
+      ],
+      "witness": {
+        "kind": "declared",
+        "file": "Cargo.toml",
+        "line": 12
+      }
+    }
+  ],
+  "entries": [
+    {
+      "item": "smallsvc::main#fn",
+      "witness": {
+        "kind": "span",
+        "file": "src/main.rs",
+        "line": 3
+      }
+    },
+    {
+      "item": "smallsvc::routes::health#fn",
+      "framework": "actix",
+      "witness": {
+        "kind": "span",
+        "file": "src/main.rs",
+        "line": 6
+      }
+    }
+  ],
+  "tables": [
+    {
+      "name": "heartbeats",
+      "witness": {
+        "kind": "declared",
+        "file": "migrations/20240101000000_heartbeats.sql",
+        "line": 1
+      }
+    }
+  ],
+  "commits": [
+    {
+      "hash": "1111111111111111111111111111111111111111",
+      "author": "Example <example@example.com>",
+      "summary": "feat(routes): add health",
+      "trailers": [
+        {
+          "key": "Arch-Element",
+          "value": "a1b2c3d4"
+        }
+      ],
+      "files": [
+        "src/routes.rs"
+      ],
+      "element": "a1b2c3d4"
+    }
+  ]
+}

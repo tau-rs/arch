@@ -1,0 +1,10 @@
+# Pinned pointers to repositories arch is tested against (HANDOFF §1, §5).
+# Bump deliberately; a golden-fact change is reviewed in arch-fixtures first, then pinned here.
+
+[arch-fixtures]
+repo = "https://github.com/tau-rs/arch-fixtures"
+commit = ""            # empty: arch-fixtures not seeded yet (issue #9)
+
+[repos.zero2prod]
+repo = "https://github.com/LukeMathWalker/zero-to-production"
+commit = "970987c5f793af6fc8e557731c9bbb23b620451e"   # main, 2024-09-01; milestone 4 target
