@@ -30,7 +30,7 @@ announced in arch-design before it ships (HANDOFF §5). Adding an optional field
   byte-identical when unrelated lines move (MAP-1).
 - Empty flags, empty arrays and absent options are omitted.
 
-### Decisions encoded (spec §13 = ADR *n*)
+### Decisions encoded (arch-design ADRs)
 
 | ADR | where |
 |---|---|
@@ -41,7 +41,7 @@ announced in arch-design before it ships (HANDOFF §5). Adding an optional field
 | 16 commits as facts with trailers | `Commit`, `Trailer` |
 | 21 content-addressed element ids | `Commit.element` |
 
-Open: the link-kind list (FINDINGS F-3, issue #10).
+Open: the link-kind list (FINDINGS F-3, arch-design issue 16, arch issue #10).
 
 ## Store and `.arch/` formats
 

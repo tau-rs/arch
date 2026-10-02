@@ -4,8 +4,7 @@
 //! the types in [`model`] (`ARCH_UPDATE_SCHEMA=1 cargo test -p arch-facts` regenerates it; CI fails
 //! when the committed file drifts). Design notes: `docs/arch-facts.md`.
 //!
-//! Spec references: HANDOFF §2 arch-facts; spec §7, §13.1–2, 9, 21. Until arch-design is seeded,
-//! spec §13 decision *n* is ADR *n*.
+//! Spec references: handoff-arch.md §2 arch-facts; spec §7; ADR 0001, 0002, 0009, 0021.
 
 pub mod model;
 

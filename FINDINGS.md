@@ -1,8 +1,13 @@
 # FINDINGS · from:arch
 
-Findings made while building `tau-rs/arch` that change a design decision in `arch-design`.
-Each entry moves to `arch-design` (ADR or note, tagged `from:arch`) once that repo is seeded;
-until then this file is the record. Spec §13 decision *n* is treated as ADR *n*.
+Findings made while building `tau-rs/arch` that change a design decision. The record of each is
+the `from:arch` issue in `tau-rs/arch-design`; this file keeps the evidence next to the experiment
+that produced it.
+
+| finding | arch-design issue | arch issue |
+|---|---|---|
+| F-1 / F-2 | https://github.com/tau-rs/arch-design/issues/15 | #2 |
+| F-3 | https://github.com/tau-rs/arch-design/issues/16 | #10 |
 
 ## F-1 · Hooks passed via `--settings` never fire under `claude -p --bare` (2026-10-02)
 
