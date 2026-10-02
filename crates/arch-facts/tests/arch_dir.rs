@@ -54,9 +54,10 @@ fn areas_rules_allows_round_trip_as_toml() {
     allows.add(Allow {
         site: "src/pg.rs::dequeue".into(),
         rule: "cycle".into(),
+        target: None,
         reason: "known".into(),
         by: "t".into(),
-        at: now(),
+        at: Some(now()),
     });
     arch.write_allows(&allows).unwrap();
     assert_eq!(arch.read_allows().unwrap(), allows);

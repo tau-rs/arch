@@ -81,12 +81,20 @@ flowchart LR
 |---|---|---|
 | `areas.toml` | `Areas` | overrides only: `rule`, `main_bin`, `[[area]] name · paths · side · order` |
 | `areas/<name>.md` | text | one description per area, read into the context pack |
-| `rules` | `Rules` | TOML: `[[rule]] subject · must_not · targets · level`, `[lints] name = bool`; `Rules::v1_template()` is ADR 0006 |
-| `allows` | `Allows` | TOML: `[[allow]] site · rule · reason · by · at` |
+| `rules` | `Rules` | TOML: `[[rule]] subject · must_not · targets · level`, `[lints] name = true/false or "block"/"warn"/"off"` (both provisional readings accepted until arch-design#4 decides); `Rules::v1_template()` is ADR 0006 |
+| `allows` | `Allows` | TOML: `[[allow]] site · rule · target? · reason · by · at?` |
 | `sessions/<id>/plan.toml` | `Plan` | elements (`ElementId` = `sha256(session · intention · site)[:8]`, label `E<n>`), groups, gates |
 | `sessions/<id>/thread.jsonl` | `ThreadEntry` per line | arch's own thread; driver session id and transcript path as pointers |
 | `sessions/<id>/records/NNNN-<kind>.toml` | `Record` | gate-output · judge-verdict · denial · override · resolution, each with witnesses |
 | `refs/notes/arch` | `Archive` | at merge, `Archive::move_to_notes` writes the folder as one TOML note and removes it from the tree |
+
+## The arch-fixtures pin
+
+`fixtures/pin.toml` names the arch-fixtures commit; `scripts/fetch-fixtures.sh` clones it into
+`fixtures/arch-fixtures/` (gitignored), in CI and locally. `tests/golden.rs` then requires the clone,
+reads every `golden/<repo>/sizes.json`, round-trips every `facts.json` present and checks its counts
+against `sizes.json`, and parses `repos/smallsvc/.arch/` with the readers above. Bump the pin
+deliberately: a golden change is a reviewed PR in arch-fixtures first (handoff §5).
 
 ## Open questions filed in arch-design (`from:arch`)
 

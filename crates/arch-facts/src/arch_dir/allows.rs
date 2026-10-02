@@ -12,12 +12,16 @@ pub struct Allow {
     pub site: String,
     /// The rule (`subject must not ... targets`) or lint name allowed there.
     pub rule: String,
+    /// The link's target the allow is for, when the finding is on a link.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
     /// Why.
     pub reason: String,
     /// Who (a person; agents cannot write this file).
     pub by: String,
-    /// When.
-    pub at: Timestamp,
+    /// When, if recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<Timestamp>,
 }
 
 /// The content of `allows`.
@@ -61,9 +65,10 @@ mod tests {
         a.add(Allow {
             site: "src/store/pg.rs::dequeue".into(),
             rule: "domain must not depend-on driven".into(),
+            target: None,
             reason: "transitional".into(),
             by: "titouan".into(),
-            at: crate::session::now(),
+            at: Some(crate::session::now()),
         });
         assert!(a.allows(
             "src/store/pg.rs::dequeue",

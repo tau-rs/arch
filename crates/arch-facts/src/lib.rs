@@ -24,7 +24,7 @@ pub mod store;
 
 pub use arch_dir::{
     Allow, Allows, ArchDir, Archive, ArchiveFile, AreaOverride, Areas, Column, ColumnRule, Level,
-    NOTES_REF, Rule, Rules, SessionDir,
+    LintLevel, LintSetting, NOTES_REF, Rule, Rules, SessionDir,
 };
 pub use error::{Error, Result};
 pub use event::{Attribution, Event, SubsystemState};
