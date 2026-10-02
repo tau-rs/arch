@@ -1,0 +1,1235 @@
+{
+  "$defs": {
+    "Access": {
+      "description": "Read or write.",
+      "oneOf": [
+        {
+          "const": "read",
+          "description": "Reads.",
+          "type": "string"
+        },
+        {
+          "const": "write",
+          "description": "Writes (inserts, updates, sends).",
+          "type": "string"
+        }
+      ]
+    },
+    "Analyzer": {
+      "additionalProperties": false,
+      "description": "The producer of the facts.",
+      "properties": {
+        "degraded": {
+          "description": "Crates that fell back to syntax-only facts, with the reason (ADR 10).",
+          "items": {
+            "$ref": "#/$defs/Degraded"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "`arch-analyze`.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Analyzer version (crate version plus the rust-analyzer crates' version).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "Commit": {
+      "additionalProperties": false,
+      "description": "A commit as a fact (spec §7, ADR 16).",
+      "properties": {
+        "author": {
+          "description": "Author as `Name <email>`.",
+          "type": "string"
+        },
+        "element": {
+          "description": "The plan element the commit realizes, from the `Arch-Element` trailer.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "files": {
+          "description": "Files touched, repository-relative.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hash": {
+          "description": "Full hash.",
+          "type": "string"
+        },
+        "summary": {
+          "description": "First line of the message.",
+          "type": "string"
+        },
+        "trailers": {
+          "description": "Trailers, in order; keys may repeat.",
+          "items": {
+            "$ref": "#/$defs/Trailer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "hash",
+        "author",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "Confidence": {
+      "description": "How sure a fact is (ADR 9). A finding on a `guessed` link warns, never blocks; on `declared`\nit cannot gate a merge.",
+      "oneOf": [
+        {
+          "const": "resolved",
+          "description": "From the type-checked view.",
+          "type": "string"
+        },
+        {
+          "const": "guessed",
+          "description": "From a pattern, or from the syntax-only fallback.",
+          "type": "string"
+        },
+        {
+          "const": "declared",
+          "description": "Written by a person in `.arch/` (a rule, an allow, an area).",
+          "type": "string"
+        }
+      ]
+    },
+    "Crate": {
+      "additionalProperties": false,
+      "description": "A cargo package in the workspace or its closure.",
+      "properties": {
+        "name": {
+          "description": "Crate name.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/CrateStatus",
+          "description": "Whether it is part of the unit or marked \"not analyzed\" with a reason."
+        },
+        "targets": {
+          "description": "Targets by kind, e.g. `lib`, `bin:zero2prod`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "status"
+      ],
+      "type": "object"
+    },
+    "CrateStatus": {
+      "description": "Why a crate is or is not in the unit.",
+      "oneOf": [
+        {
+          "description": "In the unit's closure; facts produced.",
+          "properties": {
+            "kind": {
+              "const": "analyzed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tool bin, an example, or a target outside the closure; named in the status line only.",
+          "properties": {
+            "kind": {
+              "const": "not-analyzed",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Degraded": {
+      "additionalProperties": false,
+      "description": "One crate rust-analyzer could not type-check; all its facts are `guessed`.",
+      "properties": {
+        "crate": {
+          "description": "Crate name.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why, as the tool reported it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "crate",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "Entry": {
+      "additionalProperties": false,
+      "description": "An entry point.",
+      "properties": {
+        "framework": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Framework"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The framework that holds the entry; absent for a plain `main`, test or bench."
+        },
+        "item": {
+          "description": "The item.",
+          "type": "string"
+        },
+        "witness": {
+          "$ref": "#/$defs/Witness",
+          "description": "Why it is an entry."
+        }
+      },
+      "required": [
+        "item",
+        "witness"
+      ],
+      "type": "object"
+    },
+    "External": {
+      "additionalProperties": false,
+      "description": "Something outside the repository the code talks to.",
+      "properties": {
+        "id": {
+          "description": "Stable id, e.g. `external:crate:sqlx`, `external:http:api.postmarkapp.com`.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/PortKind",
+          "description": "Medium."
+        },
+        "name": {
+          "description": "Display name.",
+          "type": "string"
+        },
+        "touched": {
+          "description": "The subset of its surface the unit touches: function paths, endpoints, table names.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "witness": {
+          "$ref": "#/$defs/Witness",
+          "description": "Where the dependency is declared."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "witness"
+      ],
+      "type": "object"
+    },
+    "Framework": {
+      "description": "Frameworks that hold entries (spec §7 table), plus the generic rule.",
+      "oneOf": [
+        {
+          "const": "axum",
+          "description": "axum.",
+          "type": "string"
+        },
+        {
+          "const": "actix",
+          "description": "actix-web.",
+          "type": "string"
+        },
+        {
+          "const": "tonic",
+          "description": "tonic.",
+          "type": "string"
+        },
+        {
+          "const": "bevy",
+          "description": "bevy `App` systems.",
+          "type": "string"
+        },
+        {
+          "const": "lambda",
+          "description": "AWS Lambda.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Generic rule: the entry calls into a dependency that calls back; the dependency is named.",
+          "properties": {
+            "generic": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "generic"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Item": {
+      "additionalProperties": false,
+      "description": "A code item.",
+      "properties": {
+        "crate": {
+          "description": "Crate the item belongs to.",
+          "type": "string"
+        },
+        "file": {
+          "description": "Repository-relative path, forward slashes.",
+          "type": "string"
+        },
+        "flags": {
+          "$ref": "#/$defs/ItemFlags",
+          "description": "Markers used by the map and the lints."
+        },
+        "id": {
+          "description": "Stable id: `<crate>::<module path>::<name>` plus `#<kind>`; impls are\n`<crate>::<module>::impl <Trait> for <Type>#impl` (or `impl <Type>#impl`), with `#impl.2`\nfor a second block in the same module. Never contains a line number.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ItemKind",
+          "description": "What kind of item."
+        },
+        "module": {
+          "description": "Module path inside the crate, `::`-separated, empty for the crate root.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Bare name (`subscribe`, `NewSubscriber`).",
+          "type": "string"
+        },
+        "reexported": {
+          "description": "Reachable through a `pub use` somewhere in the crate.",
+          "type": "boolean"
+        },
+        "scope": {
+          "description": "Scope id; V1: the unit's id (present so V2 units are an addition, spec §3).",
+          "type": "string"
+        },
+        "span": {
+          "$ref": "#/$defs/Span",
+          "description": "Where the item is in the file."
+        },
+        "visibility": {
+          "$ref": "#/$defs/Visibility",
+          "description": "Visibility as declared."
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "file",
+        "span",
+        "crate",
+        "module",
+        "visibility",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "ItemFlags": {
+      "additionalProperties": false,
+      "description": "Item markers. All optional; absent means false.",
+      "properties": {
+        "cfg": {
+          "description": "The `cfg` predicate guarding the item, when any (`test`, `feature = \"x\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "drop": {
+          "description": "Implements `Drop`.",
+          "type": "boolean"
+        },
+        "entry": {
+          "description": "An entry point (also listed in [`Facts::entries`]).",
+          "type": "boolean"
+        },
+        "generated": {
+          "description": "Produced by a macro expansion or a build script.",
+          "type": "boolean"
+        },
+        "unsafe": {
+          "description": "Contains or is an `unsafe` block, fn, impl or trait.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ItemKind": {
+      "description": "Item kinds (HANDOFF §2).",
+      "oneOf": [
+        {
+          "const": "fn",
+          "description": "A function or method.",
+          "type": "string"
+        },
+        {
+          "const": "struct",
+          "description": "A struct.",
+          "type": "string"
+        },
+        {
+          "const": "enum",
+          "description": "An enum.",
+          "type": "string"
+        },
+        {
+          "const": "trait",
+          "description": "A trait.",
+          "type": "string"
+        },
+        {
+          "const": "impl",
+          "description": "An impl block.",
+          "type": "string"
+        },
+        {
+          "const": "mod",
+          "description": "A module.",
+          "type": "string"
+        },
+        {
+          "const": "macro",
+          "description": "A macro.",
+          "type": "string"
+        },
+        {
+          "const": "const",
+          "description": "A const.",
+          "type": "string"
+        },
+        {
+          "const": "static",
+          "description": "A static.",
+          "type": "string"
+        },
+        {
+          "const": "type-alias",
+          "description": "A type alias.",
+          "type": "string"
+        },
+        {
+          "const": "union",
+          "description": "A union.",
+          "type": "string"
+        }
+      ]
+    },
+    "Link": {
+      "additionalProperties": false,
+      "description": "A relation. `from` is always an item; `to` is an item, a port, an external or a table.",
+      "properties": {
+        "confidence": {
+          "$ref": "#/$defs/Confidence",
+          "description": "How sure the analyzer is (ADR 9)."
+        },
+        "flags": {
+          "$ref": "#/$defs/LinkFlags",
+          "description": "Qualifiers."
+        },
+        "from": {
+          "description": "Source item id.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/LinkKind",
+          "description": "One of the 21 kinds in four families, or `refers-to` (FINDINGS F-3, issue #10)."
+        },
+        "reason": {
+          "description": "For `guessed` links: the pattern that produced the guess; for unresolved targets: why.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to": {
+          "$ref": "#/$defs/Target",
+          "description": "Target."
+        },
+        "witness": {
+          "$ref": "#/$defs/Witness",
+          "description": "Where the relation is visible."
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "kind",
+        "confidence",
+        "witness"
+      ],
+      "type": "object"
+    },
+    "LinkFlags": {
+      "additionalProperties": false,
+      "description": "Link qualifiers (HANDOFF §2: declared-or-shape · read-or-write · compile-time · unsafe).",
+      "properties": {
+        "access": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Access"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Read or write, for `reads` and `queues`."
+        },
+        "compile_time": {
+          "description": "Happens at compile time (macro, const eval, build script).",
+          "type": "boolean"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Origin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whether the relation was declared (an explicit `impl`, `use`) or inferred from shape."
+        },
+        "unsafe": {
+          "description": "Crosses an `unsafe` boundary.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "LinkKind": {
+      "description": "Link kinds. Families: call · type · data · structure, plus `refers-to` outside them.\n`resolved` by default from the type-checked view; `hands-off`, `listens-to`, `calls-out` and\n`wires` are pattern guesses (HANDOFF §2).",
+      "oneOf": [
+        {
+          "const": "calls",
+          "description": "Calls a function or method.",
+          "type": "string"
+        },
+        {
+          "const": "calls-port",
+          "description": "Calls through a port (a trait object or generic the unit owns).",
+          "type": "string"
+        },
+        {
+          "const": "depends-on-port",
+          "description": "Takes a port as a dependency (field, parameter) without a call site in this item.",
+          "type": "string"
+        },
+        {
+          "const": "hands-off",
+          "description": "Hands work to another task, thread or channel (spawn, send).",
+          "type": "string"
+        },
+        {
+          "const": "listens-to",
+          "description": "Receives from a channel, topic or signal.",
+          "type": "string"
+        },
+        {
+          "const": "calls-out",
+          "description": "Calls out of the unit to an external.",
+          "type": "string"
+        },
+        {
+          "const": "wires",
+          "description": "Wires an implementation to a port at composition time (main, a builder, a container).",
+          "type": "string"
+        },
+        {
+          "const": "routes",
+          "description": "A registered `route → handler`, with the middleware stack in `reason`-free `witness` lines.",
+          "type": "string"
+        },
+        {
+          "const": "implements",
+          "description": "Implements a trait.",
+          "type": "string"
+        },
+        {
+          "const": "refines",
+          "description": "A trait refines (has as supertrait) another.",
+          "type": "string"
+        },
+        {
+          "const": "inherits",
+          "description": "Inherits in the derive/delegation sense (`#[derive]`, `Deref` delegation).",
+          "type": "string"
+        },
+        {
+          "const": "uses-type",
+          "description": "Uses a type in a signature or a body.",
+          "type": "string"
+        },
+        {
+          "const": "holds",
+          "description": "Holds a value of the type (a field).",
+          "type": "string"
+        },
+        {
+          "const": "constructs",
+          "description": "Constructs the type.",
+          "type": "string"
+        },
+        {
+          "const": "matches-on",
+          "description": "Matches on the type's variants.",
+          "type": "string"
+        },
+        {
+          "const": "reads",
+          "description": "Reads or writes state, a field, a table; the direction is `flags.access`.",
+          "type": "string"
+        },
+        {
+          "const": "queues",
+          "description": "Uses a shared table as a queue; inserter or dequeuer per `flags.access`.",
+          "type": "string"
+        },
+        {
+          "const": "tests",
+          "description": "Tests the target.",
+          "type": "string"
+        },
+        {
+          "const": "re-exports",
+          "description": "Re-exports the target (`pub use`).",
+          "type": "string"
+        },
+        {
+          "const": "expands",
+          "description": "Expands to the target (macro).",
+          "type": "string"
+        },
+        {
+          "const": "decorates",
+          "description": "Decorates the target (attribute macro).",
+          "type": "string"
+        },
+        {
+          "const": "refers-to",
+          "description": "Names the target without a stronger relation known.",
+          "type": "string"
+        }
+      ]
+    },
+    "Origin": {
+      "description": "Declared or inferred from shape.",
+      "oneOf": [
+        {
+          "const": "declared",
+          "description": "Written in source.",
+          "type": "string"
+        },
+        {
+          "const": "shape",
+          "description": "Inferred from structure.",
+          "type": "string"
+        }
+      ]
+    },
+    "Port": {
+      "additionalProperties": false,
+      "description": "A port: a place on the unit's flat sides where the world touches it or it touches the world\n(spec §5, MAP-31/32).",
+      "properties": {
+        "external": {
+          "description": "The external behind a driven port, when known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Stable id, e.g. `port:http:POST /subscriptions`, `port:sql:postgres`.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/PortKind",
+          "description": "Protocol or medium."
+        },
+        "name": {
+          "description": "Display name.",
+          "type": "string"
+        },
+        "section": {
+          "$ref": "#/$defs/Section",
+          "description": "Section on the side, in the map's fixed order."
+        },
+        "side": {
+          "$ref": "#/$defs/Side",
+          "description": "Driving (the world calls the unit) or driven (the unit calls the world)."
+        },
+        "witness": {
+          "$ref": "#/$defs/Witness",
+          "description": "Where the port is declared or first used."
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "side",
+        "section",
+        "witness"
+      ],
+      "type": "object"
+    },
+    "PortKind": {
+      "description": "Port kinds (spec §5).",
+      "oneOf": [
+        {
+          "const": "rpc",
+          "description": "gRPC, JSON-RPC and the like.",
+          "type": "string"
+        },
+        {
+          "const": "http",
+          "description": "HTTP routes and clients.",
+          "type": "string"
+        },
+        {
+          "const": "cli",
+          "description": "Command-line arguments and subcommands.",
+          "type": "string"
+        },
+        {
+          "const": "topic",
+          "description": "Message topics and channels.",
+          "type": "string"
+        },
+        {
+          "const": "crate",
+          "description": "A dependency crate used as a boundary.",
+          "type": "string"
+        },
+        {
+          "const": "sql",
+          "description": "SQL databases.",
+          "type": "string"
+        },
+        {
+          "const": "pub",
+          "description": "The crate's own public API (`pub` surface).",
+          "type": "string"
+        },
+        {
+          "const": "redis",
+          "description": "Redis.",
+          "type": "string"
+        },
+        {
+          "const": "fs",
+          "description": "The filesystem.",
+          "type": "string"
+        },
+        {
+          "const": "tty",
+          "description": "The terminal.",
+          "type": "string"
+        },
+        {
+          "const": "declared",
+          "description": "Declared by a person in `.arch/`.",
+          "type": "string"
+        }
+      ]
+    },
+    "QueueUse": {
+      "additionalProperties": false,
+      "description": "Who inserts and who dequeues from a shared table used as a queue.",
+      "properties": {
+        "dequeuers": {
+          "description": "Item ids that dequeue.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inserters": {
+          "description": "Item ids that insert.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "inserters",
+        "dequeuers"
+      ],
+      "type": "object"
+    },
+    "Repo": {
+      "additionalProperties": false,
+      "description": "The repository and the commit (or worktree state) the facts belong to.",
+      "properties": {
+        "commit": {
+          "description": "Full commit hash, or a worktree-state hash prefixed `wt:` for uncommitted trees (ADR 2).",
+          "type": "string"
+        },
+        "name": {
+          "description": "Repository name as the forge knows it, e.g. `zero2prod`.",
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/Unit",
+          "description": "The one unit analyzed in V1: the main bin (or lib) and its closure (ADR 7)."
+        }
+      },
+      "required": [
+        "name",
+        "commit",
+        "unit"
+      ],
+      "type": "object"
+    },
+    "Section": {
+      "description": "Sections on a side, fixed order (spec §5).",
+      "oneOf": [
+        {
+          "const": "platform-services",
+          "description": "Platform services (own infrastructure).",
+          "type": "string"
+        },
+        {
+          "const": "third-party",
+          "description": "Third-party services.",
+          "type": "string"
+        },
+        {
+          "const": "events",
+          "description": "Events and topics.",
+          "type": "string"
+        },
+        {
+          "const": "data-stores",
+          "description": "Data stores.",
+          "type": "string"
+        },
+        {
+          "const": "os",
+          "description": "The operating system.",
+          "type": "string"
+        },
+        {
+          "const": "libraries",
+          "description": "Libraries.",
+          "type": "string"
+        },
+        {
+          "const": "unresolved",
+          "description": "Could not be placed.",
+          "type": "string"
+        }
+      ]
+    },
+    "Side": {
+      "description": "Which side of the unit a port sits on.",
+      "oneOf": [
+        {
+          "const": "driving",
+          "description": "The world calls the unit.",
+          "type": "string"
+        },
+        {
+          "const": "driven",
+          "description": "The unit calls the world.",
+          "type": "string"
+        }
+      ]
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "A position range in a file; lines and columns are 1-based, `end` inclusive.",
+      "properties": {
+        "col": {
+          "description": "Column on the first line.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "end_col": {
+          "description": "Column on the last line.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "end_line": {
+          "description": "Last line.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "line": {
+          "description": "First line.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "line",
+        "col",
+        "end_line",
+        "end_col"
+      ],
+      "type": "object"
+    },
+    "Table": {
+      "additionalProperties": false,
+      "description": "A database table named in `migrations/*.sql`.",
+      "properties": {
+        "name": {
+          "description": "Table name.",
+          "type": "string"
+        },
+        "queue": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QueueUse"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set when the table is used as a queue (spec §7)."
+        },
+        "witness": {
+          "$ref": "#/$defs/Witness",
+          "description": "The migration that creates it."
+        }
+      },
+      "required": [
+        "name",
+        "witness"
+      ],
+      "type": "object"
+    },
+    "Target": {
+      "description": "What a link points at.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "An item id.",
+          "properties": {
+            "item": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "item"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A port id.",
+          "properties": {
+            "port": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "port"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "An external id.",
+          "properties": {
+            "external": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "external"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A table name.",
+          "properties": {
+            "table": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "table"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Trailer": {
+      "additionalProperties": false,
+      "description": "One commit trailer.",
+      "properties": {
+        "key": {
+          "description": "Key, e.g. `Arch-Element`.",
+          "type": "string"
+        },
+        "value": {
+          "description": "Value.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "type": "object"
+    },
+    "Unit": {
+      "additionalProperties": false,
+      "description": "The analyzed unit. V1 has exactly one per repository; the id is the scope on every item.",
+      "properties": {
+        "id": {
+          "description": "Scope id carried by every item, e.g. `unit:zero2prod`.",
+          "type": "string"
+        },
+        "main_target": {
+          "description": "The cargo target the unit is built from: first `[[bin]]`, else the lib, or the\n`areas.toml` override.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "main_target"
+      ],
+      "type": "object"
+    },
+    "Visibility": {
+      "description": "Declared visibility, folded to five levels.",
+      "oneOf": [
+        {
+          "const": "pub",
+          "description": "`pub`.",
+          "type": "string"
+        },
+        {
+          "const": "crate",
+          "description": "`pub(crate)`.",
+          "type": "string"
+        },
+        {
+          "const": "super",
+          "description": "`pub(super)`.",
+          "type": "string"
+        },
+        {
+          "const": "restricted",
+          "description": "`pub(in path)`.",
+          "type": "string"
+        },
+        {
+          "const": "private",
+          "description": "No modifier.",
+          "type": "string"
+        }
+      ]
+    },
+    "Witness": {
+      "description": "Where a fact can be seen (the witness rule, spec §1).",
+      "oneOf": [
+        {
+          "description": "A location in a source file of the repository.",
+          "properties": {
+            "col": {
+              "description": "1-based column, when known.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "file": {
+              "description": "Repository-relative path.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "span",
+              "type": "string"
+            },
+            "line": {
+              "description": "1-based line.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "file",
+            "line"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A contract or a declaration (`Cargo.toml`, `.arch/rules`, a migration file).",
+          "properties": {
+            "file": {
+              "description": "Repository-relative path.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "declared",
+              "type": "string"
+            },
+            "line": {
+              "description": "1-based line.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "file",
+            "line"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tool's output (`cargo metadata`, a test run), identified by its content hash.",
+          "properties": {
+            "kind": {
+              "const": "tool",
+              "type": "string"
+            },
+            "output_sha256": {
+              "description": "SHA-256 of the output, hex.",
+              "type": "string"
+            },
+            "tool": {
+              "description": "Tool name and arguments as run.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "tool",
+            "output_sha256"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$id": "https://github.com/tau-rs/arch/blob/main/schemas/facts.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Everything the analyzer knows about one repository at one commit.",
+  "properties": {
+    "analyzer": {
+      "$ref": "#/$defs/Analyzer",
+      "description": "Who produced the facts and what it could not type-check."
+    },
+    "commits": {
+      "description": "Commits on the branch as facts (author, trailers, files, plan element).",
+      "items": {
+        "$ref": "#/$defs/Commit"
+      },
+      "type": "array"
+    },
+    "crates": {
+      "description": "Cargo packages seen, analyzed or not.",
+      "items": {
+        "$ref": "#/$defs/Crate"
+      },
+      "type": "array"
+    },
+    "entries": {
+      "description": "Entry points, including framework-held ones (a handler axum calls is an entry).",
+      "items": {
+        "$ref": "#/$defs/Entry"
+      },
+      "type": "array"
+    },
+    "externals": {
+      "description": "Things outside the repository the code talks to, with the part of their surface touched.",
+      "items": {
+        "$ref": "#/$defs/External"
+      },
+      "type": "array"
+    },
+    "items": {
+      "description": "Code items: functions, types, traits, impls, modules, macros, consts, statics.",
+      "items": {
+        "$ref": "#/$defs/Item"
+      },
+      "type": "array"
+    },
+    "links": {
+      "description": "Relations between items, ports, externals and tables.",
+      "items": {
+        "$ref": "#/$defs/Link"
+      },
+      "type": "array"
+    },
+    "ports": {
+      "description": "The unit's ports: where the outside world touches it and where it touches the world.",
+      "items": {
+        "$ref": "#/$defs/Port"
+      },
+      "type": "array"
+    },
+    "repo": {
+      "$ref": "#/$defs/Repo",
+      "description": "The repository and commit the facts describe."
+    },
+    "schema_version": {
+      "description": "Shape version of this document; see [`SCHEMA_VERSION`].",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "tables": {
+      "description": "Database tables named in `migrations/*.sql`, with queue use when detected.",
+      "items": {
+        "$ref": "#/$defs/Table"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "repo",
+    "analyzer"
+  ],
+  "title": "Facts",
+  "type": "object"
+}
