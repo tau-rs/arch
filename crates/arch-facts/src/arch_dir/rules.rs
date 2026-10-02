@@ -40,6 +40,48 @@ pub const V1_LINTS: [&str; 5] = [
     "unresolved-dyn",
 ];
 
+/// A lint's setting. The record has not fixed the shape (arch-design#4); both readings in
+/// use are accepted: `true`/`false`, or a level `"block"` · `"warn"` · `"off"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LintSetting {
+    /// On (warn) or off.
+    Enabled(bool),
+    /// On at a level.
+    Level(LintLevel),
+}
+
+/// A lint level, when the setting names one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LintLevel {
+    /// Blocks.
+    Block,
+    /// Warns.
+    Warn,
+    /// Off.
+    Off,
+}
+
+impl LintSetting {
+    /// Whether the lint runs.
+    pub fn is_on(self) -> bool {
+        !matches!(
+            self,
+            LintSetting::Enabled(false) | LintSetting::Level(LintLevel::Off)
+        )
+    }
+
+    /// The level a finding gets: `block` only when said so, otherwise `warn`.
+    pub fn level(self) -> Option<Level> {
+        match self {
+            LintSetting::Enabled(false) | LintSetting::Level(LintLevel::Off) => None,
+            LintSetting::Level(LintLevel::Block) => Some(Level::Block),
+            LintSetting::Enabled(true) | LintSetting::Level(LintLevel::Warn) => Some(Level::Warn),
+        }
+    }
+}
+
 /// The content of `rules`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -47,8 +89,8 @@ pub struct Rules {
     /// Dependency rules.
     #[serde(rename = "rule")]
     pub rules: Vec<Rule>,
-    /// Lint settings: name → on.
-    pub lints: BTreeMap<String, bool>,
+    /// Lint settings by name.
+    pub lints: BTreeMap<String, LintSetting>,
 }
 
 impl Rules {
@@ -76,7 +118,10 @@ impl Rules {
                     level: Level::Block,
                 },
             ],
-            lints: V1_LINTS.iter().map(|l| (l.to_string(), true)).collect(),
+            lints: V1_LINTS
+                .iter()
+                .map(|l| (l.to_string(), LintSetting::Enabled(true)))
+                .collect(),
         }
     }
 
@@ -87,7 +132,7 @@ impl Rules {
 
     /// Whether a lint is on.
     pub fn lint_on(&self, name: &str) -> bool {
-        self.lints.get(name).copied().unwrap_or(false)
+        self.lints.get(name).is_some_and(|s| s.is_on())
     }
 }
 
@@ -102,5 +147,25 @@ mod tests {
         assert!(V1_LINTS.iter().all(|l| t.lint_on(l)));
         let back: Rules = toml::from_str(&t.to_toml().unwrap()).unwrap();
         assert_eq!(t, back);
+    }
+
+    #[test]
+    fn lint_settings_accept_bool_and_level() {
+        let r: Rules = toml::from_str(
+            "[lints]\na = true\nb = false\nc = \"block\"\nd = \"warn\"\ne = \"off\"",
+        )
+        .unwrap();
+        assert!(
+            r.lint_on("a")
+                && !r.lint_on("b")
+                && r.lint_on("c")
+                && r.lint_on("d")
+                && !r.lint_on("e")
+        );
+        assert!(!r.lint_on("missing"));
+        assert_eq!(r.lints["c"].level(), Some(Level::Block));
+        assert_eq!(r.lints["d"].level(), Some(Level::Warn));
+        assert_eq!(r.lints["a"].level(), Some(Level::Warn));
+        assert_eq!(r.lints["e"].level(), None);
     }
 }

@@ -124,23 +124,135 @@ fn the_published_example_round_trips_through_the_store() {
     round_trip(&repo_root().join("schemas/examples/facts.minimal.json"));
 }
 
+/// The arch-fixtures commit pinned in `fixtures/pin.toml`, if any.
+fn pinned_commit() -> Option<String> {
+    let pin = std::fs::read_to_string(repo_root().join("fixtures/pin.toml")).unwrap();
+    let section = pin.split("[arch-fixtures]").nth(1)?.split("\n[").next()?;
+    let commit = section
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("commit"))?;
+    let commit = commit
+        .trim_start_matches([' ', '='])
+        .trim()
+        .trim_start_matches('"');
+    let commit = commit.split('"').next()?.trim();
+    (!commit.is_empty()).then(|| commit.to_string())
+}
+
+/// `fixtures/arch-fixtures/`, which must be present when a commit is pinned
+/// (`scripts/fetch-fixtures.sh`); `None` when nothing is pinned yet.
+fn fixtures_root() -> Option<PathBuf> {
+    let commit = pinned_commit()?;
+    let dir = repo_root().join("fixtures/arch-fixtures");
+    assert!(
+        dir.join("golden").is_dir(),
+        "fixtures/pin.toml pins arch-fixtures at {commit} but {} is missing: run scripts/fetch-fixtures.sh",
+        dir.display()
+    );
+    Some(dir)
+}
+
+/// `golden/<repo>/sizes.json` as arch-fixtures publishes it; `items` and `links` are null until
+/// arch-analyze fills them.
+#[derive(serde::Deserialize)]
+struct Sizes {
+    repo: String,
+    crates: u64,
+    items: Option<u64>,
+    links: Option<u64>,
+}
+
 #[test]
-fn every_pinned_golden_facts_file_round_trips_through_the_store() {
-    let golden_dir = repo_root().join("fixtures/arch-fixtures/golden");
-    let Ok(rd) = std::fs::read_dir(&golden_dir) else {
-        eprintln!(
-            "no pinned arch-fixtures golden/ at {}: nothing to check yet (issue #9)",
-            golden_dir.display()
-        );
+fn every_pinned_golden_repo_has_sizes_and_its_facts_round_trip_through_the_store() {
+    let Some(root) = fixtures_root() else {
+        eprintln!("fixtures/pin.toml pins no arch-fixtures commit yet");
         return;
     };
-    let mut n = 0;
-    for entry in rd {
-        let facts = entry.unwrap().path().join("facts.json");
-        if facts.is_file() {
-            round_trip(&facts);
-            n += 1;
+    let mut repos = 0;
+    for entry in std::fs::read_dir(root.join("golden")).unwrap() {
+        let dir = entry.unwrap().path();
+        if !dir.is_dir() {
+            continue;
+        }
+        repos += 1;
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let sizes: Sizes =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("sizes.json")).unwrap())
+                .unwrap_or_else(|e| panic!("{name}/sizes.json: {e}"));
+        assert_eq!(sizes.repo, name);
+        let facts_path = dir.join("facts.json");
+        if facts_path.is_file() {
+            round_trip(&facts_path);
+            let facts: Facts =
+                serde_json::from_str(&std::fs::read_to_string(&facts_path).unwrap()).unwrap();
+            assert_eq!(
+                facts.crates.len() as u64,
+                sizes.crates,
+                "{name}: crates in facts.json vs sizes.json"
+            );
+            if let Some(n) = sizes.items {
+                assert_eq!(
+                    facts.items.len() as u64,
+                    n,
+                    "{name}: items in facts.json vs sizes.json"
+                );
+            }
+            if let Some(n) = sizes.links {
+                assert_eq!(
+                    facts.links.len() as u64,
+                    n,
+                    "{name}: links in facts.json vs sizes.json"
+                );
+            }
+        } else {
+            eprintln!("{name}: sizes.json only; facts.json arrives with arch-analyze (#9)");
         }
     }
-    eprintln!("{n} golden facts files round-tripped");
+    assert!(
+        repos >= 4,
+        "expected ripgrep, zero2prod, smallsvc, zed under golden/, found {repos}"
+    );
+}
+
+#[test]
+fn smallsvc_dot_arch_files_parse_with_the_readers() {
+    let Some(root) = fixtures_root() else { return };
+    let arch = ArchDir::of_repo(&root.join("repos/smallsvc"));
+    assert!(arch.exists(), "smallsvc has a .arch/");
+
+    let areas = arch.read_areas().unwrap();
+    assert_eq!(areas.rule, Some(ColumnRule::Hexagon));
+    assert_eq!(areas.main_bin.as_deref(), Some("orderly"));
+    assert_eq!(
+        areas.area("http").and_then(|a| a.side),
+        Some(Column::Driving)
+    );
+    assert!(
+        areas.areas.iter().all(|a| !a.paths.is_empty()),
+        "overrides name paths"
+    );
+
+    let rules = arch.read_rules().unwrap();
+    assert_eq!(
+        rules.rules.len(),
+        3,
+        "the ADR 0006 template has three rules"
+    );
+    assert_eq!(rules.rules, Rules::v1_template().rules);
+    assert_eq!(
+        rules.lints.values().filter(|l| l.is_on()).count(),
+        5,
+        "five lints on"
+    );
+
+    let allows = arch.read_allows().unwrap();
+    assert_eq!(allows.allows.len(), 1);
+    assert!(allows.allows(
+        "src/app/notify.rs::NotifyCustomer::deliver",
+        "domain must not depend-on driven"
+    ));
+
+    // Writing back what was read keeps the content (comments aside).
+    let again: Areas = toml::from_str(&areas.to_toml().unwrap()).unwrap();
+    assert_eq!(again, areas);
 }

@@ -3,7 +3,7 @@
 
 [arch-fixtures]
 repo = "https://github.com/tau-rs/arch-fixtures"
-commit = ""            # empty: arch-fixtures not seeded yet (issue #9)
+commit = "42c5699f836c83b4f68090c33586910ffc8c21db"   # main, 2026-10-02: smallsvc, sizes.json, invariants harness (its PR #2)
 
 [repos.zero2prod]
 repo = "https://github.com/LukeMathWalker/zero-to-production"

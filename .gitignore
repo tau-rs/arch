@@ -3,3 +3,4 @@
 .DS_Store
 .arch/cache/
 .context/
+fixtures/arch-fixtures/

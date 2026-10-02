@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 pub use allows::{Allow, Allows};
 pub use archive::{Archive, ArchiveFile, NOTES_REF};
 pub use areas::{AreaOverride, Areas, Column, ColumnRule};
-pub use rules::{Level, Rule, Rules};
+pub use rules::{Level, LintLevel, LintSetting, Rule, Rules};
 pub use sessions::SessionDir;
 
 use crate::error::{Error, Result};
