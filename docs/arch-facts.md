@@ -25,10 +25,19 @@ announced in arch-design before it ships (HANDOFF §5). Adding an optional field
 ### Stability rules for golden comparison
 
 - Every array is sorted: items, ports, externals, tables, crates by `id`/`name`; links by
-  `from`, `to`, `kind`; entries by `item`; commits by history order.
+  `from`, `to`, `kind`, `member`; entries by `item`; commits by history order.
 - Item ids never contain line numbers (`<crate>::<module>::<name>#<kind>`), so positions stay
   byte-identical when unrelated lines move (MAP-1).
 - Empty flags, empty arrays and absent options are omitted.
+
+### What is an item (arch issue #14, decided 2026-10-03)
+
+Everything rust-analyzer calls an item is an item, **including associated items** (methods,
+associated consts and types), which carry `parent`: the id of their `impl` or `trait`. `impl`
+blocks are items of kind `impl`, folded under their type on the map. **Enum variants and struct
+fields are not items.** A link that touches one (`matches-on`, `holds`, `reads`, `constructs`)
+targets the type and names the variant or field in `member`, so "who touches `Status::Paid`" is a
+query without the map growing a box per field.
 
 ### Decisions encoded (arch-design ADRs)
 

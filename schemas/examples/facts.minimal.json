@@ -55,6 +55,22 @@
       "scope": "unit:smallsvc"
     },
     {
+      "id": "smallsvc::routes::Status#enum",
+      "kind": "enum",
+      "name": "Status",
+      "file": "src/routes.rs",
+      "span": {
+        "line": 8,
+        "col": 1,
+        "end_line": 11,
+        "end_col": 2
+      },
+      "crate": "smallsvc",
+      "module": "routes",
+      "visibility": "pub",
+      "scope": "unit:smallsvc"
+    },
+    {
       "id": "smallsvc::routes::health#fn",
       "kind": "fn",
       "name": "health",
@@ -84,6 +100,21 @@
         "file": "src/main.rs",
         "line": 6,
         "col": 10
+      }
+    },
+    {
+      "from": "smallsvc::routes::health#fn",
+      "to": {
+        "item": "smallsvc::routes::Status#enum"
+      },
+      "member": "Up",
+      "kind": "constructs",
+      "confidence": "resolved",
+      "witness": {
+        "kind": "span",
+        "file": "src/routes.rs",
+        "line": 5,
+        "col": 5
       }
     },
     {
