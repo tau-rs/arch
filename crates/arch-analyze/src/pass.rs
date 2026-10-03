@@ -48,6 +48,8 @@ pub struct Output {
     pub rust_files: BTreeSet<String>,
     /// Rust files in the order they were walked; a file several crates walk is listed each time.
     pub walk: Vec<String>,
+    /// The packages whose crates walked each Rust file, by index into the plan's packages.
+    pub owners: BTreeMap<String, BTreeSet<usize>>,
     /// With rust-analyzer: the walked files it has no module for, by package, whose links stay
     /// guessed (a crate added since it loaded).
     pub unresolved: BTreeMap<String, Vec<String>>,
@@ -2009,6 +2011,10 @@ impl<'a> Unit<'a> {
         let mut out = Output::default();
         for f in &self.files {
             out.walk.push(f.path.clone());
+            out.owners
+                .entry(f.path.clone())
+                .or_default()
+                .insert(self.krates[f.krate].package);
             out.rust_files.insert(f.path.clone());
             out.files.entry(f.path.clone()).or_default();
         }

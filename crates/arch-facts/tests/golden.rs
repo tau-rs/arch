@@ -87,18 +87,24 @@ fn round_trip(path: &Path) {
 
     let (head, deltas) = split(&golden);
     let mut store = Store::in_memory().unwrap();
-    let files: Vec<(PathBuf, ContentHash)> = deltas
+    let files: Vec<TreeFile> = deltas
         .iter()
-        .map(|d| (d.path.clone(), d.file_hash.clone()))
+        .map(|d| TreeFile {
+            path: d.path.clone(),
+            file_hash: d.file_hash.clone(),
+            facts_key: FactsKey::of(&d.path, &d.file_hash, "golden"),
+        })
         .collect();
     // Deltas arrive in reverse order: the store, not the producer, owns the order.
-    for d in deltas.iter().rev() {
-        store.put_file_facts(d).unwrap();
+    for (d, f) in deltas.iter().zip(&files).rev() {
+        store.put_file_facts(&f.facts_key, d).unwrap();
     }
     store.put_commits(&golden.commits).unwrap();
     let key = TreeKey::commit(&golden.repo.commit);
     let hashes: Vec<String> = golden.commits.iter().map(|c| c.hash.clone()).collect();
-    store.put_tree(&key, None, &files, &head, &hashes).unwrap();
+    store
+        .put_tree(&key, None, &files, &head, &hashes, &[])
+        .unwrap();
     assert!(store.missing_file_facts(&key).unwrap().is_empty());
 
     let assembled = store.facts(&key).unwrap().unwrap();

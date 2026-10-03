@@ -1,5 +1,5 @@
 //! The sqlite store under `.arch/cache/` (ADR 0001): facts by commit hash as per-file deltas
-//! with content hashes, branch → head pointers, worktree-state hashes (ADR 0002), view cache
+//! named by facts key, branch → head pointers, worktree-state hashes (ADR 0002), view cache
 //! tables, plan drafts (ADR 0020).
 //!
 //! No other crate opens the database; this module is the only place SQL lives.
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{Error, Result};
-use crate::hash::{ContentHash, TreeKey};
+use crate::hash::{ContentHash, FactsKey, TreeKey};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
@@ -22,15 +22,38 @@ use crate::session::{Plan, now};
 const SCHEMA: &str = include_str!("schema.sql");
 /// Bumped when `schema.sql` changes incompatibly; the cache is then rebuilt (ADR 0001: a clone
 /// without the cache is complete).
-pub const STORE_SCHEMA_VERSION: i64 = 1;
+pub const STORE_SCHEMA_VERSION: i64 = 2;
 
 /// The file name of the store inside `.arch/cache/`.
 pub const STORE_FILE: &str = "facts.sqlite";
 
-/// A tree's file list: path → content hash.
-pub type TreeFiles = Vec<(PathBuf, ContentHash)>;
+/// One file of a tree: its path, its content hash, and the key its facts are under (ADR 0002).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeFile {
+    /// Path, relative to the repo root.
+    pub path: PathBuf,
+    /// Content hash: what [`Store::changed_files`] compares.
+    pub file_hash: ContentHash,
+    /// Which delta holds the file's facts.
+    pub facts_key: FactsKey,
+}
 
-/// The facts of one file at one content hash: the unit of storage and recompute (ADR 0002).
+/// A tree's file list.
+pub type TreeFiles = Vec<TreeFile>;
+
+/// Where a worktree is (ADR 0002): the tree it is on, the commit it diverges from, its branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorktreeState {
+    /// Its current tree.
+    pub tree: TreeKey,
+    /// The commit it diverges from.
+    pub base_commit: Option<String>,
+    /// Its branch.
+    pub branch: Option<String>,
+}
+
+/// The facts of one file: the unit of storage and recompute (ADR 0002), stored under its
+/// [`FactsKey`].
 /// A tree's [`Facts`] are the union of its files' deltas under its [`TreeHead`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FileFacts {
@@ -190,23 +213,18 @@ impl Store {
 
     // ----- per-file deltas (ADR 0002) -----
 
-    /// Store one file's facts, keyed by its content hash. Idempotent.
-    pub fn put_file_facts(&self, facts: &FileFacts) -> Result<()> {
-        let json = serde_json::to_string(facts)?;
-        self.conn.execute(
-            "INSERT OR REPLACE INTO file_facts(file_hash, path, facts, degraded) VALUES (?1, ?2, ?3, ?4)",
-            params![facts.file_hash.as_str(), path_str(&facts.path), json, facts.degraded],
-        )?;
-        Ok(())
+    /// Store one file's facts under its key. Idempotent: a key names one delta.
+    pub fn put_file_facts(&self, key: &FactsKey, facts: &FileFacts) -> Result<()> {
+        put_file_facts(&self.conn, key, facts)
     }
 
-    /// The facts of a file at a content hash, if computed.
-    pub fn file_facts(&self, file_hash: &ContentHash) -> Result<Option<FileFacts>> {
+    /// The facts stored under a key, if computed.
+    pub fn file_facts(&self, key: &FactsKey) -> Result<Option<FileFacts>> {
         let json: Option<String> = self
             .conn
             .query_row(
-                "SELECT facts FROM file_facts WHERE file_hash = ?1",
-                params![file_hash.as_str()],
+                "SELECT facts FROM file_facts WHERE facts_key = ?1",
+                params![key.as_str()],
                 |r| r.get(0),
             )
             .optional()?;
@@ -216,46 +234,73 @@ impl Store {
         })
     }
 
-    /// Whether a file's facts at this hash are already known (a rebase reuses them).
-    pub fn has_file_facts(&self, file_hash: &ContentHash) -> Result<bool> {
+    /// Whether the facts under a key are already known (a rebase reuses them).
+    pub fn has_file_facts(&self, key: &FactsKey) -> Result<bool> {
         let n: i64 = self.conn.query_row(
-            "SELECT count(*) FROM file_facts WHERE file_hash = ?1",
-            params![file_hash.as_str()],
+            "SELECT count(*) FROM file_facts WHERE facts_key = ?1",
+            params![key.as_str()],
             |r| r.get(0),
         )?;
         Ok(n > 0)
     }
 
+    /// Delete the deltas no recorded tree references (ADR 0002: a cache rule of the store).
+    /// Returns how many went.
+    pub fn prune_file_facts(&self) -> Result<usize> {
+        Ok(prune(&self.conn)?)
+    }
+
     // ----- trees: a commit or a worktree state -----
 
-    /// Record a tree: which files at which hashes, its head, and the commits on its branch.
-    /// Replaces any earlier record of the same key.
+    /// Record a tree: its files with their facts keys, its head, the commits on its branch, and
+    /// the deltas computed for it, in one transaction. Each delta goes under the key `files`
+    /// gives its path; deltas already stored under their key may be left out. Replaces any
+    /// earlier record of the same tree.
     pub fn put_tree(
         &mut self,
         key: &TreeKey,
         base_commit: Option<&str>,
-        files: &[(PathBuf, ContentHash)],
+        files: &[TreeFile],
         head: &TreeHead,
         commits: &[String],
+        deltas: &[FileFacts],
     ) -> Result<()> {
         let tx = self.conn.transaction()?;
         let k = key.db_key();
-        tx.execute("DELETE FROM trees WHERE key = ?1", params![k])?;
+        let replaced = tx.execute("DELETE FROM trees WHERE key = ?1", params![k])? > 0;
         tx.execute(
             "INSERT INTO trees(key, kind, base_commit, head, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![k, key.kind(), base_commit, serde_json::to_string(head)?, now().to_string()],
         )?;
         {
-            let mut ins = tx
-                .prepare("INSERT INTO tree_files(tree_key, path, file_hash) VALUES (?1, ?2, ?3)")?;
-            for (p, h) in files {
-                ins.execute(params![k, path_str(p), h.as_str()])?;
+            let mut ins = tx.prepare(
+                "INSERT INTO tree_files(tree_key, path, file_hash, facts_key) VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for f in files {
+                ins.execute(params![
+                    k,
+                    path_str(&f.path),
+                    f.file_hash.as_str(),
+                    f.facts_key.as_str()
+                ])?;
             }
             let mut insc =
                 tx.prepare("INSERT INTO tree_commits(tree_key, ord, hash) VALUES (?1, ?2, ?3)")?;
             for (i, h) in commits.iter().enumerate() {
                 insc.execute(params![k, i as i64, h])?;
             }
+        }
+        for d in deltas {
+            let Some(f) = files.iter().find(|f| f.path == d.path) else {
+                return Err(Error::Other(anyhow::anyhow!(
+                    "a delta for {}, which is not a file of the tree",
+                    d.path.display()
+                )));
+            };
+            put_file_facts(&tx, &f.facts_key, d)?;
+        }
+        if replaced {
+            prune(&tx)?;
         }
         tx.commit()?;
         Ok(())
@@ -273,15 +318,10 @@ impl Store {
 
     /// The files of a tree.
     pub fn tree_files(&self, key: &TreeKey) -> Result<TreeFiles> {
-        let mut st = self
-            .conn
-            .prepare("SELECT path, file_hash FROM tree_files WHERE tree_key = ?1 ORDER BY path")?;
-        let rows = st.query_map(params![key.db_key()], |r| {
-            Ok((
-                PathBuf::from(r.get::<_, String>(0)?),
-                ContentHash(r.get(1)?),
-            ))
-        })?;
+        let mut st = self.conn.prepare(
+            "SELECT path, file_hash, facts_key FROM tree_files WHERE tree_key = ?1 ORDER BY path",
+        )?;
+        let rows = st.query_map(params![key.db_key()], tree_file)?;
         rows.collect::<std::result::Result<_, _>>()
             .map_err(Into::into)
     }
@@ -289,15 +329,11 @@ impl Store {
     /// The files of a tree whose facts are not yet computed: what the analyzer must do.
     pub fn missing_file_facts(&self, key: &TreeKey) -> Result<TreeFiles> {
         let mut st = self.conn.prepare(
-            "SELECT t.path, t.file_hash FROM tree_files t LEFT JOIN file_facts f ON f.file_hash = t.file_hash
-             WHERE t.tree_key = ?1 AND f.file_hash IS NULL ORDER BY t.path",
+            "SELECT t.path, t.file_hash, t.facts_key FROM tree_files t
+             LEFT JOIN file_facts f ON f.facts_key = t.facts_key
+             WHERE t.tree_key = ?1 AND f.facts_key IS NULL ORDER BY t.path",
         )?;
-        let rows = st.query_map(params![key.db_key()], |r| {
-            Ok((
-                PathBuf::from(r.get::<_, String>(0)?),
-                ContentHash(r.get(1)?),
-            ))
-        })?;
+        let rows = st.query_map(params![key.db_key()], tree_file)?;
         rows.collect::<std::result::Result<_, _>>()
             .map_err(Into::into)
     }
@@ -353,7 +389,7 @@ impl Store {
         facts.entries = a.entries;
         facts.tables = a.tables;
         let mut st = self.conn.prepare(
-            "SELECT f.facts FROM tree_files t JOIN file_facts f ON f.file_hash = t.file_hash WHERE t.tree_key = ?1",
+            "SELECT f.facts FROM tree_files t JOIN file_facts f ON f.facts_key = t.facts_key WHERE t.tree_key = ?1",
         )?;
         for json in st.query_map(params![k], |r| r.get::<_, String>(0))? {
             let file: FileFacts = serde_json::from_str(&json?)?;
@@ -430,39 +466,62 @@ impl Store {
             .map_err(Into::into)
     }
 
-    /// Record a worktree: its current state hash, base commit and branch.
+    /// Point a worktree at its current tree, with the commit it diverges from and its branch.
+    /// The tree it pointed at before is forgotten when it is a worktree state no other worktree
+    /// is on, and the deltas no tree references any more go with it (ADR 0002). Commit trees
+    /// are kept.
     pub fn set_worktree(
-        &self,
+        &mut self,
         path: &Path,
-        state: &ContentHash,
-        base_commit: &str,
+        tree: &TreeKey,
+        base_commit: Option<&str>,
         branch: Option<&str>,
     ) -> Result<()> {
-        self.conn.execute(
-            "INSERT OR REPLACE INTO worktrees(path, state_hash, base_commit, branch) VALUES (?1, ?2, ?3, ?4)",
-            params![path_str(path), state.as_str(), base_commit, branch],
+        let tx = self.conn.transaction()?;
+        let before = worktree_tree(&tx, path)?;
+        tx.execute(
+            "INSERT OR REPLACE INTO worktrees(path, tree_key, base_commit, branch) VALUES (?1, ?2, ?3, ?4)",
+            params![path_str(path), tree.db_key(), base_commit, branch],
         )?;
+        if let Some(before) = before.filter(|b| *b != tree.db_key()) {
+            retire(&tx, &before)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
-    /// A worktree's record: (state hash, base commit, branch).
-    pub fn worktree(&self, path: &Path) -> Result<Option<(ContentHash, String, Option<String>)>> {
-        self.conn
+    /// Where a worktree is, if recorded.
+    pub fn worktree(&self, path: &Path) -> Result<Option<WorktreeState>> {
+        let row: Option<(String, Option<String>, Option<String>)> = self
+            .conn
             .query_row(
-                "SELECT state_hash, base_commit, branch FROM worktrees WHERE path = ?1",
+                "SELECT tree_key, base_commit, branch FROM worktrees WHERE path = ?1",
                 params![path_str(path)],
-                |r| Ok((ContentHash(r.get(0)?), r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
-            .optional()
-            .map_err(Into::into)
+            .optional()?;
+        Ok(row.and_then(|(t, base_commit, branch)| {
+            Some(WorktreeState {
+                tree: TreeKey::from_db_key(&t)?,
+                base_commit,
+                branch,
+            })
+        }))
     }
 
-    /// Forget a worktree (removed at archive, ADR 0003).
-    pub fn remove_worktree(&self, path: &Path) -> Result<()> {
-        self.conn.execute(
+    /// Forget a worktree (removed at archive, ADR 0003), and its tree when that is a worktree
+    /// state no other worktree is on.
+    pub fn remove_worktree(&mut self, path: &Path) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        let before = worktree_tree(&tx, path)?;
+        tx.execute(
             "DELETE FROM worktrees WHERE path = ?1",
             params![path_str(path)],
         )?;
+        if let Some(before) = before {
+            retire(&tx, &before)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -596,6 +655,61 @@ fn normalize(facts: &mut Facts) {
     facts.externals.sort_by(|a, b| a.id.cmp(&b.id));
     facts.entries.sort_by(|a, b| a.item.cmp(&b.item));
     facts.tables.sort_by(|a, b| a.name.cmp(&b.name));
+}
+
+fn put_file_facts(conn: &Connection, key: &FactsKey, facts: &FileFacts) -> Result<()> {
+    let json = serde_json::to_string(facts)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO file_facts(facts_key, path, file_hash, facts, degraded) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            key.as_str(),
+            path_str(&facts.path),
+            facts.file_hash.as_str(),
+            json,
+            facts.degraded
+        ],
+    )?;
+    Ok(())
+}
+
+fn tree_file(r: &rusqlite::Row<'_>) -> rusqlite::Result<TreeFile> {
+    Ok(TreeFile {
+        path: PathBuf::from(r.get::<_, String>(0)?),
+        file_hash: ContentHash(r.get(1)?),
+        facts_key: FactsKey(r.get(2)?),
+    })
+}
+
+fn worktree_tree(conn: &Connection, path: &Path) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT tree_key FROM worktrees WHERE path = ?1",
+            params![path_str(path)],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+/// Forget a tree a worktree has left, when it is a worktree state no worktree is on, then the
+/// deltas nothing references any more.
+fn retire(conn: &Connection, tree: &str) -> Result<()> {
+    let held: i64 = conn.query_row(
+        "SELECT count(*) FROM worktrees WHERE tree_key = ?1",
+        params![tree],
+        |r| r.get(0),
+    )?;
+    if held == 0 && tree.starts_with("worktree:") {
+        conn.execute("DELETE FROM trees WHERE key = ?1", params![tree])?;
+        prune(conn)?;
+    }
+    Ok(())
+}
+
+fn prune(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.execute(
+        "DELETE FROM file_facts WHERE facts_key NOT IN (SELECT facts_key FROM tree_files)",
+        [],
+    )
 }
 
 fn drop_everything(conn: &Connection) -> Result<()> {

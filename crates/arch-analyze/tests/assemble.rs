@@ -44,13 +44,13 @@ fn options() -> Options {
 }
 
 fn delta(store: &Store, key: &TreeKey, path: impl AsRef<Path>) -> FileFacts {
-    let (_, hash) = store
+    let file = store
         .tree_files(key)
         .unwrap()
         .into_iter()
-        .find(|(p, _)| p == path.as_ref())
+        .find(|f| f.path == path.as_ref())
         .unwrap();
-    store.file_facts(&hash).unwrap().unwrap()
+    store.file_facts(&file.facts_key).unwrap().unwrap()
 }
 
 fn is_entry(facts: &Facts, id: &str) -> bool {
@@ -96,10 +96,14 @@ fn a_delta_holds_its_files_items_and_links_and_notes_the_rest() {
     let facts = store.facts(&key).unwrap().unwrap();
 
     // Entries, ports, externals and tables are the tree's, not a file's.
-    for (path, _) in store.tree_files(&key).unwrap() {
-        let d = delta(&store, &key, &path);
-        assert!(d.entries.is_empty() && d.ports.is_empty(), "{path:?}");
-        assert!(d.externals.is_empty() && d.tables.is_empty(), "{path:?}");
+    for f in store.tree_files(&key).unwrap() {
+        let d = delta(&store, &key, &f.path);
+        assert!(d.entries.is_empty() && d.ports.is_empty(), "{:?}", f.path);
+        assert!(
+            d.externals.is_empty() && d.tables.is_empty(),
+            "{:?}",
+            f.path
+        );
     }
     assert!(!facts.entries.is_empty() && !facts.ports.is_empty());
     assert!(!facts.externals.is_empty() && !facts.tables.is_empty());
