@@ -4,6 +4,7 @@
 //!
 //! No other crate opens the database; this module is the only place SQL lives.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -13,7 +14,8 @@ use crate::hash::{ContentHash, TreeKey};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Analyzer, Commit, Crate, Entry, External, Facts, Item, Link, Port, Repo, Table,
+    Analyzer, Commit, Crate, Entry, External, Facts, Item, Link, LinkKind, Port, Repo, Table,
+    Target,
 };
 use crate::session::{Plan, now};
 
@@ -57,6 +59,11 @@ pub struct FileFacts {
     /// Set when these facts are syntax-level only (ADR 0010), with the reason.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub degraded: Option<String>,
+    /// The analyzer's own notes on the file, read back when a tree is assembled: what the
+    /// file's bodies contribute to facts that span files (ADR 0002). Opaque to the store and
+    /// not part of [`Facts`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<serde_json::Value>,
 }
 
 impl FileFacts {
@@ -72,6 +79,7 @@ impl FileFacts {
             entries: vec![],
             tables: vec![],
             degraded: None,
+            notes: None,
         }
     }
 }
@@ -87,6 +95,39 @@ pub struct TreeHead {
     /// Crates seen, analyzed or not.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub crates: Vec<Crate>,
+    /// Facts derived when the tree is assembled, because they need more than one file's body.
+    #[serde(default, skip_serializing_if = "Assembled::is_empty")]
+    pub assembled: Assembled,
+}
+
+/// Facts no single file's delta can hold: they are read off several files' bodies, so a delta
+/// carrying them would go stale when another file changes (ADR 0002). An inserter's `queues`
+/// link needs the dequeuer's `SKIP LOCKED`; a handler is an entry because a route elsewhere
+/// names it; a crate external lists what every file touches.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Assembled {
+    /// Links derived across files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<Link>,
+    /// Ports.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ports: Vec<Port>,
+    /// Externals.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub externals: Vec<External>,
+    /// Entries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entries: Vec<Entry>,
+    /// Tables, with their queue use.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tables: Vec<Table>,
+}
+
+impl Assembled {
+    /// True when nothing was derived.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// The store.
@@ -305,6 +346,12 @@ impl Store {
         let k = key.db_key();
         let mut facts = Facts::empty(head.repo, head.analyzer);
         facts.crates = head.crates;
+        let a = head.assembled;
+        facts.links = a.links;
+        facts.ports = a.ports;
+        facts.externals = a.externals;
+        facts.entries = a.entries;
+        facts.tables = a.tables;
         let mut st = self.conn.prepare(
             "SELECT f.facts FROM tree_files t JOIN file_facts f ON f.file_hash = t.file_hash WHERE t.tree_key = ?1",
         )?;
@@ -323,6 +370,7 @@ impl Store {
         for json in stc.query_map(params![k], |r| r.get::<_, String>(0))? {
             facts.commits.push(serde_json::from_str(&json?)?);
         }
+        item_flags(&mut facts);
         normalize(&mut facts);
         Ok(Some(facts))
     }
@@ -508,6 +556,26 @@ impl Store {
         let rows = st.query_map([], |r| r.get::<_, String>(0))?;
         rows.collect::<std::result::Result<_, _>>()
             .map_err(Into::into)
+    }
+}
+
+/// An item is an entry when an entry names it, and re-exported when a `re-exports` link points
+/// at it. Both are read off the whole tree: the entry or the `pub use` may sit in another file
+/// than the item (ADR 0002).
+fn item_flags(facts: &mut Facts) {
+    let entries: HashSet<String> = facts.entries.iter().map(|e| e.item.clone()).collect();
+    let reexported: HashSet<String> = facts
+        .links
+        .iter()
+        .filter(|l| l.kind == LinkKind::ReExports)
+        .filter_map(|l| match &l.to {
+            Target::Item(id) => Some(id.clone()),
+            _ => None,
+        })
+        .collect();
+    for item in &mut facts.items {
+        item.flags.entry = entries.contains(&item.id);
+        item.reexported = reexported.contains(&item.id);
     }
 }
 

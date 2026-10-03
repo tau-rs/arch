@@ -106,14 +106,22 @@ of another target carry `<crate>[<kind>:<target>]`, e.g. `orderly[bin:orderly]::
 `index` records the tree (`put_tree`), then writes one `FileFacts` per file of the tree; files
 that are not sources of the unit get an empty delta, so `missing_file_facts` is empty afterwards.
 The syntax-level pass recomputes the whole unit on each call and overwrites the deltas, because
-a file's links depend on other files (arch-design issue 21). Ports, externals and entries are
-stored with the file their witness names.
+a file's links depend on other files (arch-design issue 21).
+
+A delta holds what its file declares and the links it makes, plus the file's *notes* (opaque to
+the store): routes, spawns, SQL touches, crate paths, HTTP hosts and terminal writes, tests,
+endless loops, created tables. Facts that need more than one file's body are derived from every
+delta's notes when the tree is recorded (`assemble::derive`, ADR 0002) and stored on the tree,
+not in a delta: entries, ports, externals, tables with their queue use, and an inserter's
+`queues` link. So a file's delta is the same whatever the other files' bodies say. Where several
+files offer the same fact (one entry per item, one port per name, one witness per host), the
+first in the pass's visit order wins, as each note records its place in it.
 
 ## Open questions filed in arch-design (`from:arch`)
 
 | question | provisional reading in code | issue |
 |---|---|---|
-| a file's facts are not a function of that file alone | recompute the unit, overwrite deltas | arch-design#21 |
+| a file's facts are not a function of that file alone | recompute the unit, overwrite deltas; facts that span files derived at assembly | decided: ADR 0002 (arch-design#21); the per-file key and recompute land in #59 |
 | id of an item in a non-lib target | `<crate>[bin:<name>]::…` | arch-design#22 |
 | what "cannot type-check" means | the load fails: cargo cannot describe the workspace, `rust-src` is missing, or the proc-macro server does not start | arch-design#23 |
 | entries (ADR 0028) | `main`, framework-held handlers, spawned workers; a test is not an entry (its `tests` links carry what it exercises). `main` and a worker spawned in `main`'s body are `resolved` at resolved depth; routes are patterns and stay `guessed` | decided: ADR 0028 |

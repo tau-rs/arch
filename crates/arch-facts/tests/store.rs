@@ -48,6 +48,7 @@ fn head(commit: &str) -> TreeHead {
             status: CrateStatus::Analyzed,
             targets: vec!["bin:smallsvc".into()],
         }],
+        assembled: Default::default(),
     }
 }
 
@@ -247,4 +248,55 @@ fn the_store_lives_under_arch_cache() {
             .as_deref(),
         Some("c1")
     );
+}
+
+#[test]
+fn facts_that_span_files_come_from_the_tree_and_set_the_item_flags() {
+    let mut store = Store::in_memory().unwrap();
+    let a = file_facts("src/a.rs", "a v1", &["smallsvc::a::f"]);
+    let b = file_facts("src/b.rs", "b v1", &["smallsvc::b::g"]);
+    let c1 = TreeKey::commit("c1");
+    let files = vec![
+        (a.path.clone(), a.file_hash.clone()),
+        (b.path.clone(), b.file_hash.clone()),
+    ];
+    let mut head = head("c1");
+    // `f` routes to `g` and re-exports it: `g` is an entry, and both facts sit in a's body.
+    head.assembled.entries.push(Entry {
+        item: "smallsvc::b::g".into(),
+        kind: EntryKind::Framework,
+        framework: Some(Framework::Axum),
+        confidence: Confidence::Guessed,
+        witness: Witness::Span {
+            file: "src/a.rs".into(),
+            line: 1,
+            col: None,
+        },
+    });
+    let reexport = Link {
+        from: "smallsvc::a::f".into(),
+        to: Target::Item("smallsvc::b::g".into()),
+        member: None,
+        kind: LinkKind::ReExports,
+        confidence: Confidence::Guessed,
+        witness: Witness::Span {
+            file: "src/a.rs".into(),
+            line: 1,
+            col: None,
+        },
+        flags: LinkFlags::default(),
+        reason: Some("pub use".into()),
+    };
+    head.assembled.links.push(reexport.clone());
+    store.put_file_facts(&a).unwrap();
+    store.put_file_facts(&b).unwrap();
+    store.put_tree(&c1, None, &files, &head, &[]).unwrap();
+
+    let facts = store.facts(&c1).unwrap().unwrap();
+    assert_eq!(facts.entries.len(), 1);
+    assert_eq!(facts.links, vec![reexport]);
+    let g = facts.items.iter().find(|i| i.name == "g").unwrap();
+    assert!(g.flags.entry && g.reexported);
+    let f = facts.items.iter().find(|i| i.name == "f").unwrap();
+    assert!(!f.flags.entry && !f.reexported);
 }

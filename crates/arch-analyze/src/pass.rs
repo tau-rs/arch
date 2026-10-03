@@ -13,33 +13,29 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use arch_facts::{
-    Access, Confidence, Entry, EntryKind, External, Framework, Item, ItemKind, Link, LinkFlags,
-    LinkKind, Origin, Port, PortKind, QueueUse, Section, Side, Table, Target, Witness,
+    Access, Confidence, Framework, Item, ItemKind, Link, LinkFlags, LinkKind, Origin, Target,
+    Witness,
 };
 use ra_ap_syntax::ast::{self, AstNode, HasArgList, HasName, HasVisibility};
 use ra_ap_syntax::{Edition, SyntaxKind, SyntaxNode};
 
+use crate::assemble::{CreatedTable, HostNote, Notes, Order, RouteNote, SpawnNote, SqlNote};
 use crate::cargo::{TargetKind, UnitPlan};
 use crate::items::{self, CrateCtx, Found, Ids, Lines};
 use crate::sql;
 
 mod resolved;
 
-/// The facts of one file, before they are wrapped with its hash.
+/// The facts of one file, before they are wrapped with its hash. What spans files is not here:
+/// the file's [`Notes`] say what its bodies contribute, and [`crate::assemble`] derives it.
 #[derive(Debug, Default, Clone)]
 pub struct Parts {
     /// Items declared in the file.
     pub items: Vec<Item>,
     /// Links whose `from` is in the file.
     pub links: Vec<Link>,
-    /// Ports witnessed in the file.
-    pub ports: Vec<Port>,
-    /// Externals witnessed in the file.
-    pub externals: Vec<External>,
-    /// Entries witnessed in the file.
-    pub entries: Vec<Entry>,
-    /// Tables, for a migration.
-    pub tables: Vec<Table>,
+    /// What the file's bodies contribute to facts that span files.
+    pub notes: Notes,
 }
 
 /// What the pass produced: facts by repository-relative file, and which files were source files
@@ -153,6 +149,7 @@ struct Env {
 }
 
 struct Spawn {
+    order: Order,
     owner: usize,
     target: usize,
     in_loop: bool,
@@ -165,6 +162,7 @@ struct SqlUse {
 }
 
 struct Route {
+    order: Order,
     owner: usize,
     handler: usize,
     name: String,
@@ -190,16 +188,19 @@ struct Unit<'a> {
     envs: HashMap<usize, Rc<Env>>,
     // results
     links: BTreeMap<(String, String, String, Option<String>), Link>,
-    touched: BTreeMap<String, BTreeSet<String>>,
+    /// External crates' paths touched, by the file that touches them, then by package.
+    touched: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     spawns: Vec<Spawn>,
     sql_uses: Vec<SqlUse>,
     routes: Vec<Route>,
-    http: BTreeMap<String, Witness>,
-    tty: Option<Witness>,
+    /// HTTP calls: the file they are in, where, the host, the call.
+    http: Vec<(usize, Order, String, Witness)>,
+    /// Direct writes to the terminal: the file, where, the call.
+    tty: Vec<(usize, Order, Witness)>,
+    /// Notes taken so far per file, for [`Order`].
+    seq: HashMap<usize, u32>,
     /// `Cargo.lock` packages by the name code spells (`sqlx_core`): package name and line.
     lock: HashMap<String, (String, u32)>,
-    /// The type-checked view was available: entries it confirms are `resolved`.
-    type_checked: bool,
     /// Set while links come from the type-checked view: they are `resolved` and need no reason.
     resolved: bool,
 }
@@ -317,11 +318,11 @@ impl<'a> Unit<'a> {
             spawns: Vec::new(),
             sql_uses: Vec::new(),
             routes: Vec::new(),
-            http: BTreeMap::new(),
-            tty: None,
+            http: Vec::new(),
+            tty: Vec::new(),
+            seq: HashMap::new(),
+            lock: crate::assemble::lock_packages(root),
             resolved: false,
-            type_checked: false,
-            lock: lock_packages(root),
         };
         for ut in &plan.unit {
             let package = &plan.packages[ut.package];
@@ -430,6 +431,13 @@ impl<'a> Unit<'a> {
 
     fn id(&self, i: usize) -> &str {
         &self.items[i].f.item.id
+    }
+
+    /// Where the walk over file `fi` is: its next note's [`Order`].
+    fn order(&mut self, fi: usize) -> Order {
+        let n = self.seq.entry(fi).or_insert(0);
+        *n += 1;
+        [0, fi as u32, *n]
     }
 
     /// The module a node owned by `owner` resolves names in.
@@ -1002,7 +1010,10 @@ impl<'a> Unit<'a> {
         w: Witness,
         why: &str,
     ) {
+        let file = self.items[from].f.item.file.clone();
         self.touched
+            .entry(file)
+            .or_default()
             .entry(pkg.to_string())
             .or_default()
             .insert(path.to_string());
@@ -1404,7 +1415,9 @@ impl<'a> Unit<'a> {
                     &s.join("::"),
                     None,
                 );
+                let order = self.order(fi);
                 self.spawns.push(Spawn {
+                    order,
                     owner,
                     target,
                     in_loop,
@@ -1534,7 +1547,8 @@ impl<'a> Unit<'a> {
                         &why,
                         None,
                     );
-                    self.http.entry(host).or_insert(w);
+                    let order = self.order(fi);
+                    self.http.push((fi, order, host, w));
                 }
             }
         }
@@ -1610,7 +1624,8 @@ impl<'a> Unit<'a> {
                 &why,
                 None,
             );
-            self.tty.get_or_insert(w);
+            let order = self.order(fi);
+            self.tty.push((fi, order, w));
         }
         let text = tt.syntax().text().to_string();
         if s.first().is_some_and(|x| x == "sqlx")
@@ -1919,7 +1934,9 @@ impl<'a> Unit<'a> {
                 &why,
                 None,
             );
+            let order = self.order(fi);
             self.routes.push(Route {
+                order,
                 owner,
                 handler: h,
                 name,
@@ -1953,6 +1970,7 @@ impl<'a> Unit<'a> {
                 };
                 let name = format!("{} {route}", verb.to_uppercase());
                 self.routes.push(Route {
+                    order: [1, self.items[i].file as u32, i as u32],
                     owner: i,
                     handler: i,
                     name,
@@ -1963,386 +1981,27 @@ impl<'a> Unit<'a> {
         }
     }
 
-    /// ADR 0028: the functions a start-up spawn runs forever are entries.
-    fn spawned_workers(&self, entries: &BTreeSet<usize>) -> Vec<(usize, Witness, bool)> {
-        let mut calls: HashMap<usize, Vec<usize>> = HashMap::new();
-        for l in self.links.values() {
-            if l.kind == LinkKind::Calls
-                && let Target::Item(to) = &l.to
-                && let (Some(a), Some(b)) = (self.by_id.get(&l.from), self.by_id.get(to))
-            {
-                calls.entry(*a).or_default().push(*b);
-            }
-        }
-        let reach = |from: &[usize], within: Option<&str>| {
-            let mut seen: BTreeSet<usize> = from.iter().copied().collect();
-            let mut queue: Vec<usize> = from.to_vec();
-            while let Some(x) = queue.pop() {
-                for y in calls.get(&x).into_iter().flatten() {
-                    let top = self.items[*y]
-                        .f
-                        .item
-                        .module
-                        .split("::")
-                        .next()
-                        .unwrap_or("");
-                    if within.is_none_or(|w| w == top) && seen.insert(*y) {
-                        queue.push(*y);
-                    }
-                }
-            }
-            seen
-        };
-        let mains: Vec<usize> = (0..self.items.len())
-            .filter(|i| self.items[*i].f.item.flags.entry && !self.items[*i].f.is_test)
-            .collect();
-        let from_main = reach(&mains, None);
-        let non_test: Vec<usize> = entries
-            .iter()
-            .copied()
-            .filter(|e| !self.items[*e].f.is_test)
-            .collect();
-        let from_entries = reach(&non_test, None);
-        let mut out: Vec<(usize, Witness, bool)> = Vec::new();
-        for s in &self.spawns {
-            let test_code = |i: usize| {
-                self.items[i].f.is_test
-                    || self.items[i]
-                        .f
-                        .item
-                        .flags
-                        .cfg
-                        .as_deref()
-                        .is_some_and(|c| c.contains("test"))
-            };
-            if s.in_loop
-                || !from_main.contains(&s.owner)
-                || test_code(s.owner)
-                || test_code(s.target)
-            {
-                continue;
-            }
-            // §3: nothing calls it directly from an entry (entries themselves are reached by nobody).
-            if from_entries.contains(&s.target) && !non_test.contains(&s.target) {
-                continue;
-            }
-            let top = self.items[s.target]
-                .f
-                .item
-                .module
-                .split("::")
-                .next()
-                .unwrap_or("")
-                .to_string();
-            let loops = reach(&[s.target], Some(&top))
-                .into_iter()
-                .any(|f| items::has_unbounded_loop(&self.items[f].f.node));
-            if loops && !out.iter().any(|(t, _, _)| *t == s.target) {
-                out.push((s.target, s.witness.clone(), mains.contains(&s.owner)));
-            }
-        }
-        out
-    }
-
-    fn finish(mut self, root: &Path, tree_files: &[PathBuf]) -> Output {
+    fn finish(mut self) -> Output {
         self.attribute_routes();
         let mut out = Output::default();
         for f in &self.files {
             out.rust_files.insert(f.path.clone());
             out.files.entry(f.path.clone()).or_default();
         }
-        let manifest = |u: &Self, krate: usize| {
-            u.plan.packages[u.krates[krate].package]
-                .manifest
-                .to_string_lossy()
-                .replace('\\', "/")
-        };
-        let main_manifest = self.plan.packages[self.plan.main_package]
-            .manifest
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        // Entries: main, tests, routed handlers, spawned workers.
-        // What cargo and the type-checked view establish is resolved; at syntax depth every
-        // fact is a guess (ADR 0010). A route is a pattern at either depth.
-        let sure = if self.type_checked {
-            Confidence::Resolved
-        } else {
-            Confidence::Guessed
-        };
-        let mut entries: BTreeMap<usize, Entry> = BTreeMap::new();
-        for (i, it) in self.items.iter().enumerate() {
-            if it.f.item.flags.entry {
-                let s = it.f.item.span;
-                let witness = Witness::Span {
-                    file: it.f.item.file.clone(),
-                    line: s.line,
-                    col: Some(s.col),
-                };
-                entries.insert(
-                    i,
-                    Entry {
-                        item: it.f.item.id.clone(),
-                        kind: EntryKind::Main,
-                        framework: None,
-                        confidence: sure,
-                        witness,
-                    },
-                );
+        // Each file holds what it declares and the links it makes.
+        for it in &self.items {
+            let parts = out.files.entry(it.f.item.file.clone()).or_default();
+            parts.items.push(it.f.item.clone());
+            if it.f.is_test {
+                parts.notes.tests.push(it.f.item.id.clone());
             }
-        }
-        let mut ports: BTreeMap<String, Port> = BTreeMap::new();
-        for r in &self.routes {
-            entries.entry(r.handler).or_insert(Entry {
-                item: self.id(r.handler).to_string(),
-                kind: EntryKind::Framework,
-                framework: Some(r.framework.clone()),
-                confidence: Confidence::Guessed,
-                witness: r.witness.clone(),
-            });
-            let id = format!("port:http:{}", r.name);
-            ports.entry(id.clone()).or_insert(Port {
-                id,
-                kind: PortKind::Http,
-                name: r.name.clone(),
-                side: Side::Driving,
-                section: Section::Unresolved,
-                external: None,
-                witness: r.witness.clone(),
-            });
-            let _ = r.owner;
-        }
-        let known: BTreeSet<usize> = entries.keys().copied().collect();
-        for (worker, witness, in_main) in self.spawned_workers(&known) {
-            entries.entry(worker).or_insert(Entry {
-                item: self.id(worker).to_string(),
-                kind: EntryKind::SpawnedWorker,
-                framework: None,
-                // ADR 0028: resolved when the spawn is in `main`'s own body, guessed when it is
-                // only reached from `main`.
-                confidence: if in_main { sure } else { Confidence::Guessed },
-                witness,
-            });
-        }
-
-        // Tables from migrations, and who uses one as a queue.
-        let mut tables: Vec<(String, Table)> = Vec::new();
-        for path in tree_files {
-            let p = path.to_string_lossy().replace('\\', "/");
-            if !(p.ends_with(".sql") && p.split('/').any(|s| s == "migrations")) {
-                continue;
+            if !matches!(
+                it.f.item.kind,
+                ItemKind::Mod | ItemKind::Impl | ItemKind::Trait
+            ) && items::has_unbounded_loop(&it.f.node)
+            {
+                parts.notes.loops.push(it.f.item.id.clone());
             }
-            let Ok(text) = std::fs::read_to_string(root.join(path)) else {
-                continue;
-            };
-            for c in sql::created_tables(&text) {
-                let users = |pred: fn(&sql::Touch) -> bool| -> Vec<String> {
-                    let set: BTreeSet<String> = self
-                        .sql_uses
-                        .iter()
-                        .filter(|u| u.touch.table == c.name && pred(&u.touch))
-                        .map(|u| self.id(u.owner).to_string())
-                        .collect();
-                    set.into_iter().collect()
-                };
-                let dequeuers = users(|t| t.dequeues);
-                let queue = (!dequeuers.is_empty()).then(|| QueueUse {
-                    inserters: users(|t| t.inserts),
-                    dequeuers,
-                });
-                let witness = Witness::Declared {
-                    file: p.clone(),
-                    line: c.line,
-                };
-                tables.push((
-                    p.clone(),
-                    Table {
-                        name: c.name,
-                        witness,
-                        queue,
-                    },
-                ));
-            }
-        }
-        // An inserter into a queue table queues too; that is only known once the dequeuer is.
-        let queue_tables: BTreeSet<String> = self
-            .sql_uses
-            .iter()
-            .filter(|u| u.touch.dequeues)
-            .map(|u| u.touch.table.clone())
-            .collect();
-        let inserts: Vec<(usize, String)> = self
-            .sql_uses
-            .iter()
-            .filter(|u| u.touch.inserts && queue_tables.contains(&u.touch.table))
-            .map(|u| (u.owner, u.touch.table.clone()))
-            .collect();
-        for (owner, table) in inserts {
-            let key = (
-                self.id(owner).to_string(),
-                format!("{:?}", Target::Table(table.clone())),
-                format!("{:?}", LinkKind::Reads),
-                None,
-            );
-            let Some(w) = self.links.get(&key).map(|l| l.witness.clone()) else {
-                continue;
-            };
-            let why = format!(
-                "inserts into `{table}`, which another function dequeues with `SKIP LOCKED`"
-            );
-            self.link(
-                owner,
-                Target::Table(table),
-                LinkKind::Queues,
-                None,
-                w,
-                &why,
-                Some(Access::Write),
-            );
-        }
-
-        // Externals: crates touched, the SQL database, HTTP hosts, the terminal.
-        let mut externals: Vec<External> = Vec::new();
-        for (pkg, touched) in &self.touched {
-            let dep = self.krates.iter().find_map(|k| {
-                let p = &self.plan.packages[k.package];
-                p.deps
-                    .iter()
-                    .find(|d| &d.package == pkg)
-                    .map(|d| (p.manifest.to_string_lossy().replace('\\', "/"), d.line))
-            });
-            // A crate reached only through another one is declared by the lock file.
-            let locked = self
-                .lock
-                .values()
-                .find(|(name, _)| name == pkg)
-                .map(|(_, line)| ("Cargo.lock".to_string(), *line));
-            let (file, line) = dep.or(locked).unwrap_or((main_manifest.clone(), 1));
-            externals.push(External {
-                id: ext_id(pkg),
-                name: pkg.clone(),
-                kind: PortKind::Crate,
-                touched: touched.iter().cloned().collect(),
-                witness: Witness::Declared { file, line },
-            });
-        }
-        let sqlx = self.krates.iter().find_map(|k| {
-            let p = &self.plan.packages[k.package];
-            p.deps
-                .iter()
-                .find(|d| d.package == "sqlx")
-                .map(|d| (p.manifest.to_string_lossy().replace('\\', "/"), d.clone()))
-        });
-        let touched_tables: BTreeSet<String> = self
-            .sql_uses
-            .iter()
-            .map(|u| u.touch.table.clone())
-            .collect();
-        if !touched_tables.is_empty() || (!tables.is_empty() && sqlx.is_some()) {
-            let db = sqlx
-                .as_ref()
-                .and_then(|(_, d)| {
-                    ["postgres", "mysql", "sqlite"]
-                        .into_iter()
-                        .find(|f| d.features.iter().any(|x| x == f))
-                })
-                .unwrap_or("sql");
-            let witness = match (&sqlx, tables.first()) {
-                (Some((file, d)), _) => Witness::Declared {
-                    file: file.clone(),
-                    line: d.line,
-                },
-                (None, Some((_, t))) => t.witness.clone(),
-                (None, None) => Witness::Declared {
-                    file: main_manifest.clone(),
-                    line: 1,
-                },
-            };
-            let id = format!("external:sql:{db}");
-            externals.push(External {
-                id: id.clone(),
-                name: db.to_string(),
-                kind: PortKind::Sql,
-                touched: touched_tables.into_iter().collect(),
-                witness: witness.clone(),
-            });
-            ports.insert(
-                format!("port:sql:{db}"),
-                Port {
-                    id: format!("port:sql:{db}"),
-                    kind: PortKind::Sql,
-                    name: db.to_string(),
-                    side: Side::Driven,
-                    section: Section::DataStores,
-                    external: Some(id),
-                    witness,
-                },
-            );
-        }
-        for (host, w) in &self.http {
-            let id = format!("external:http:{host}");
-            externals.push(External {
-                id: id.clone(),
-                name: host.clone(),
-                kind: PortKind::Http,
-                touched: vec![],
-                witness: w.clone(),
-            });
-            ports.insert(
-                format!("port:http:{host}"),
-                Port {
-                    id: format!("port:http:{host}"),
-                    kind: PortKind::Http,
-                    name: host.clone(),
-                    side: Side::Driven,
-                    section: Section::ThirdParty,
-                    external: Some(id),
-                    witness: w.clone(),
-                },
-            );
-        }
-        if let Some(w) = &self.tty {
-            let id = "external:tty:log".to_string();
-            externals.push(External {
-                id: id.clone(),
-                name: "log".into(),
-                kind: PortKind::Tty,
-                touched: vec![],
-                witness: w.clone(),
-            });
-            ports.insert(
-                "port:tty:log".into(),
-                Port {
-                    id: "port:tty:log".into(),
-                    kind: PortKind::Tty,
-                    name: "log".into(),
-                    side: Side::Driven,
-                    section: Section::Os,
-                    external: Some(id),
-                    witness: w.clone(),
-                },
-            );
-        }
-
-        // Hand everything to the file it is witnessed in.
-        let reexported: BTreeSet<&str> = self
-            .links
-            .values()
-            .filter(|l| l.kind == LinkKind::ReExports)
-            .filter_map(|l| match &l.to {
-                Target::Item(id) => Some(id.as_str()),
-                _ => None,
-            })
-            .collect();
-        for (i, it) in self.items.iter().enumerate() {
-            let mut item = it.f.item.clone();
-            item.flags.entry = entries.contains_key(&i);
-            item.reexported = reexported.contains(item.id.as_str());
-            out.files
-                .entry(item.file.clone())
-                .or_default()
-                .items
-                .push(item);
         }
         for l in self.links.values() {
             if let Some(i) = self.by_id.get(&l.from) {
@@ -2353,55 +2012,74 @@ impl<'a> Unit<'a> {
                     .push(l.clone());
             }
         }
-        let file_of = |w: &Witness| match w {
-            Witness::Span { file, .. } | Witness::Declared { file, .. } => file.clone(),
-            Witness::Tool { .. } => main_manifest.clone(),
-        };
-        for e in entries.into_values() {
-            out.files
-                .entry(file_of(&e.witness))
+
+        // And notes what its bodies contribute to facts that span files (`assemble`).
+        let file = |i: usize| self.items[i].f.item.file.clone();
+        let mut notes: BTreeMap<String, Notes> = BTreeMap::new();
+        for r in &self.routes {
+            notes
+                .entry(file(r.owner))
                 .or_default()
-                .entries
-                .push(e);
+                .routes
+                .push(RouteNote {
+                    order: r.order,
+                    handler: self.id(r.handler).to_string(),
+                    name: r.name.clone(),
+                    framework: r.framework.clone(),
+                    witness: r.witness.clone(),
+                });
         }
-        for p in ports.into_values() {
-            out.files
-                .entry(file_of(&p.witness))
+        for s in &self.spawns {
+            notes
+                .entry(file(s.owner))
                 .or_default()
-                .ports
-                .push(p);
+                .spawns
+                .push(SpawnNote {
+                    order: s.order,
+                    owner: self.id(s.owner).to_string(),
+                    target: self.id(s.target).to_string(),
+                    in_loop: s.in_loop,
+                    witness: s.witness.clone(),
+                });
         }
-        for e in externals {
-            out.files
-                .entry(file_of(&e.witness))
-                .or_default()
-                .externals
-                .push(e);
+        let mut sql: BTreeMap<String, BTreeSet<SqlNote>> = BTreeMap::new();
+        for u in &self.sql_uses {
+            sql.entry(file(u.owner)).or_default().insert(SqlNote {
+                owner: self.id(u.owner).to_string(),
+                table: u.touch.table.clone(),
+                inserts: u.touch.inserts,
+                dequeues: u.touch.dequeues,
+            });
         }
-        for (file, t) in tables {
-            out.files.entry(file).or_default().tables.push(t);
+        for (f, uses) in sql {
+            notes.entry(f).or_default().sql = uses.into_iter().collect();
         }
-        let _ = manifest;
+        for (f, touched) in std::mem::take(&mut self.touched) {
+            notes.entry(f).or_default().touched = touched;
+        }
+        // Notes are taken in visit order: the first per file is the one that can win.
+        for (fi, order, host, w) in &self.http {
+            let n = notes.entry(self.files[*fi].path.clone()).or_default();
+            if !n.hosts.iter().any(|h| &h.host == host) {
+                n.hosts.push(HostNote {
+                    order: *order,
+                    host: host.clone(),
+                    witness: w.clone(),
+                });
+            }
+        }
+        for (fi, order, w) in &self.tty {
+            let n = notes.entry(self.files[*fi].path.clone()).or_default();
+            n.tty.get_or_insert((*order, w.clone()));
+        }
+        for (f, n) in notes {
+            let parts = out.files.entry(f).or_default();
+            let tests = std::mem::take(&mut parts.notes.tests);
+            let loops = std::mem::take(&mut parts.notes.loops);
+            parts.notes = Notes { tests, loops, ..n };
+        }
         out
     }
-}
-
-/// The packages `Cargo.lock` names, keyed by the name code spells for them.
-fn lock_packages(root: &Path) -> HashMap<String, (String, u32)> {
-    let mut out = HashMap::new();
-    let Ok(text) = std::fs::read_to_string(root.join("Cargo.lock")) else {
-        return out;
-    };
-    for (i, line) in text.lines().enumerate() {
-        if let Some(name) = line
-            .strip_prefix("name = \"")
-            .and_then(|l| l.strip_suffix('"'))
-        {
-            out.entry(name.replace('-', "_"))
-                .or_insert((name.to_string(), i as u32 + 1));
-        }
-    }
-    out
 }
 
 /// Whether a call expression is the direct argument of a spawn call.
@@ -2493,7 +2171,27 @@ pub fn run(
     }
     if let Some(session) = session {
         unit.resolve_links(session);
-        unit.type_checked = true;
     }
-    Ok(unit.finish(root, tree_files))
+    let mut out = unit.finish();
+    // Tables from migrations.
+    for path in tree_files {
+        let p = path.to_string_lossy().replace('\\', "/");
+        if !(p.ends_with(".sql") && p.split('/').any(|s| s == "migrations")) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(root.join(path)) else {
+            continue;
+        };
+        let tables: Vec<CreatedTable> = sql::created_tables(&text)
+            .into_iter()
+            .map(|c| CreatedTable {
+                name: c.name,
+                line: c.line,
+            })
+            .collect();
+        if !tables.is_empty() {
+            out.files.entry(p).or_default().notes.tables = tables;
+        }
+    }
+    Ok(out)
 }
