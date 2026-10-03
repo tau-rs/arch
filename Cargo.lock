@@ -93,6 +93,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arch-facts",
+ "jsonschema",
  "ra_ap_syntax",
  "serde",
  "serde_json",

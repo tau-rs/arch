@@ -441,9 +441,9 @@ impl Walker<'_> {
                     );
                     let mut inner = scope.module.to_vec();
                     inner.push(n.clone());
+                    self.found[i].inner_module = inner.clone();
                     match m.item_list() {
                         Some(list) => {
-                            self.found[i].inner_module = inner.clone();
                             let cfg = self.found[i].item.flags.cfg.clone();
                             let sub = Scope {
                                 module: &inner,
