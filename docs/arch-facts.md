@@ -63,7 +63,7 @@ older `schema_version` in `meta` is dropped and recreated).
 | table | what | ADR |
 |---|---|---|
 | `file_facts` | one file's facts at one content hash (`FileFacts` as JSON): the per-file delta | 0002 |
-| `trees`, `tree_files` | a commit or a worktree state → its files at their hashes, plus its `TreeHead` (repo, analyzer, crates) | 0002, 0007, 0010 |
+| `trees`, `tree_files` | a commit or a worktree state → its files at their hashes, plus its `TreeHead` (repo, analyzer, crates, and the facts assembled across files) | 0002, 0007, 0010 |
 | `commits`, `tree_commits` | commits as facts, and which are on a tree's branch | 0016 |
 | `branches`, `worktrees` | pointers: branch → head; worktree → state hash, base commit, branch | 0002 |
 | `view_cache` | per-branch view payloads, tagged with the tree they were computed at | views |
@@ -71,7 +71,9 @@ older `schema_version` in `meta` is dropped and recreated).
 
 The flow the analyzer follows: `put_tree(key, files)` → `missing_file_facts(key)` tells it which
 files to compute → `put_file_facts` per file → `facts(key)` assembles the document, sorted per the
-stability rules above. A rebase or a second worktree on the same base needs no recompute: deltas
+stability rules above. `facts` adds the tree's assembled facts (entries, ports, externals,
+tables, links derived across files) and sets each item's `entry` flag (an entry names it) and
+`reexported` flag (a `re-exports` link points at it), since either may sit in another file. A rebase or a second worktree on the same base needs no recompute: deltas
 are shared by file hash. `tests/golden.rs` proves the round trip on `schemas/examples/*.json` and
 on every pinned `golden/<repo>/facts.json`.
 

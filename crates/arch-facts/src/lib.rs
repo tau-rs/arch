@@ -32,4 +32,4 @@ pub use event::{Attribution, Event, SubsystemState};
 pub use hash::{ContentHash, TreeKey};
 pub use model::*;
 pub use session::*;
-pub use store::{FileFacts, Store, TreeHead};
+pub use store::{Assembled, FileFacts, Store, TreeHead};

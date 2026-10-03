@@ -75,6 +75,7 @@ fn split(facts: &Facts) -> (TreeHead, Vec<FileFacts>) {
         repo: facts.repo.clone(),
         analyzer: facts.analyzer.clone(),
         crates: facts.crates.clone(),
+        assembled: Default::default(),
     };
     (head, by_file.into_values().collect())
 }

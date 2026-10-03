@@ -84,6 +84,9 @@
       "crate": "smallsvc",
       "module": "routes",
       "visibility": "pub",
+      "flags": {
+        "entry": true
+      },
       "scope": "unit:smallsvc"
     }
   ],

@@ -98,15 +98,20 @@ impl Unit<'_> {
             .links
             .values()
             .filter_map(|l| match &l.to {
-                Target::External(id) => Some((
-                    id.strip_prefix("external:crate:")?.to_string(),
-                    l.reason.clone()?,
-                )),
+                Target::External(id) => {
+                    l.reason.as_ref()?;
+                    let file = self.items[*self.by_id.get(&l.from)?].f.item.file.clone();
+                    Some((file, id.strip_prefix("external:crate:")?.to_string()))
+                }
                 _ => None,
             })
             .collect();
-        for (pkg, _) in kept {
-            self.touched.entry(pkg).or_default();
+        for (file, pkg) in kept {
+            self.touched
+                .entry(file)
+                .or_default()
+                .entry(pkg)
+                .or_default();
         }
 
         self.resolved = true;

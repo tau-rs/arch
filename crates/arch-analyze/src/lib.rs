@@ -23,6 +23,7 @@ use arch_facts::{
     TreeHead, TreeKey, Unit,
 };
 
+pub mod assemble;
 pub mod cargo;
 pub mod git;
 pub mod items;
@@ -289,7 +290,7 @@ impl Analyzer {
                 .collect(),
         };
         let version = format!("{}+ra_ap_{}", env!("CARGO_PKG_VERSION"), ra::RA_VERSION);
-        let tree_head = TreeHead {
+        let mut tree_head = TreeHead {
             repo: Repo {
                 name,
                 commit,
@@ -304,6 +305,7 @@ impl Analyzer {
                 degraded,
             },
             crates,
+            assembled: Default::default(),
         };
 
         let commits = match (&options.commits, in_git) {
@@ -313,20 +315,14 @@ impl Analyzer {
             }
             (Commits::Branch, true) => branch_commits(&root),
         };
-        let hashes: Vec<String> = commits.iter().map(|c| c.hash.clone()).collect();
-        store.put_commits(&commits)?;
-        store.put_tree(&key, head.as_deref(), &hashed, &tree_head, &hashes)?;
-
+        let mut deltas = Vec::with_capacity(hashed.len());
         for (path, hash) in &hashed {
             let rel = path.to_string_lossy().replace('\\', "/");
             let mut facts = FileFacts::empty(path.clone(), hash.clone());
             if let Some(parts) = out.files.get(&rel) {
                 facts.items = parts.items.clone();
                 facts.links = parts.links.clone();
-                facts.ports = parts.ports.clone();
-                facts.externals = parts.externals.clone();
-                facts.entries = parts.entries.clone();
-                facts.tables = parts.tables.clone();
+                facts.notes = assemble::to_value(&parts.notes);
             }
             if out.rust_files.contains(&rel) {
                 facts.degraded = reason.clone().or_else(|| {
@@ -334,7 +330,17 @@ impl Analyzer {
                     unresolved.then(|| unresolved_reason(std::slice::from_ref(&rel)))
                 });
             }
-            store.put_file_facts(&facts)?;
+            deltas.push(facts);
+        }
+        let lock = assemble::lock_packages(&root);
+        let type_checked = self.session.is_some();
+        tree_head.assembled = assemble::derive(&plan, &lock, &deltas, &out.walk, type_checked);
+
+        let hashes: Vec<String> = commits.iter().map(|c| c.hash.clone()).collect();
+        store.put_commits(&commits)?;
+        store.put_tree(&key, head.as_deref(), &hashed, &tree_head, &hashes)?;
+        for facts in &deltas {
+            store.put_file_facts(facts)?;
         }
         Ok(key)
     }
