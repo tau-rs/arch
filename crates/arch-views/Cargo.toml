@@ -12,4 +12,9 @@ workspace = true
 
 [dependencies]
 arch-facts.workspace = true
-anyhow.workspace = true
+globset.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
