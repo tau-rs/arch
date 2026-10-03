@@ -125,7 +125,11 @@ pub enum CrateStatus {
 pub struct Item {
     /// Stable id: `<crate>::<module path>::<name>` plus `#<kind>`; impls are
     /// `<crate>::<module>::impl <Trait> for <Type>#impl` (or `impl <Type>#impl`), with `#impl.2`
-    /// for a second block in the same module. Never contains a line number.
+    /// for a second block in the same module. An associated item (method, associated const or
+    /// type) is `<parent id without its #kind>::<name>#<kind>`. Never contains a line number.
+    ///
+    /// What is an item (arch issue #14): everything rust-analyzer calls an item, including
+    /// associated items. Enum variants and struct fields are not items; see [`Link::member`].
     pub id: String,
     /// What kind of item.
     pub kind: ItemKind,
@@ -140,6 +144,9 @@ pub struct Item {
     pub crate_name: String,
     /// Module path inside the crate, `::`-separated, empty for the crate root.
     pub module: String,
+    /// For an associated item: the id of the `impl` or `trait` item it is declared in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
     /// Visibility as declared.
     pub visibility: Visibility,
     /// Reachable through a `pub use` somewhere in the crate.
@@ -246,6 +253,12 @@ pub struct Link {
     pub from: String,
     /// Target.
     pub to: Target,
+    /// The enum variant or struct field of the target that the link touches, by bare name, when
+    /// the source spells it out (`Paid` for `Status::Paid`, `total` for `o.total`, `0` for a tuple
+    /// field). Variants and fields are not items, so the target stays the type and the member is
+    /// carried here (arch issue #14). Absent when the link is about the target as a whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
     /// One of the 21 kinds in four families, or `refers-to` (FINDINGS F-3, issue #10).
     pub kind: LinkKind,
     /// How sure the analyzer is (ADR 9).
@@ -706,6 +719,24 @@ mod tests {
         assert_eq!(in_families, 21);
         assert_eq!(LinkKind::RefersTo.family(), None);
         assert_eq!(LinkKind::ALL.len(), 22);
+    }
+
+    #[test]
+    fn member_and_parent_are_optional_and_omitted_when_absent() {
+        let link: Link = serde_json::from_value(serde_json::json!({
+            "from": "c::f#fn", "to": {"item": "c::Status#enum"}, "kind": "matches-on",
+            "confidence": "guessed",
+            "witness": {"kind": "span", "file": "src/lib.rs", "line": 1}
+        }))
+        .unwrap();
+        assert_eq!(link.member, None);
+        assert!(serde_json::to_value(&link).unwrap().get("member").is_none());
+
+        let with = Link {
+            member: Some("Paid".into()),
+            ..link
+        };
+        assert_eq!(serde_json::to_value(&with).unwrap()["member"], "Paid");
     }
 
     #[test]

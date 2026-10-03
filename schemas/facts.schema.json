@@ -312,7 +312,7 @@
           "description": "Markers used by the map and the lints."
         },
         "id": {
-          "description": "Stable id: `<crate>::<module path>::<name>` plus `#<kind>`; impls are\n`<crate>::<module>::impl <Trait> for <Type>#impl` (or `impl <Type>#impl`), with `#impl.2`\nfor a second block in the same module. Never contains a line number.",
+          "description": "Stable id: `<crate>::<module path>::<name>` plus `#<kind>`; impls are\n`<crate>::<module>::impl <Trait> for <Type>#impl` (or `impl <Type>#impl`), with `#impl.2`\nfor a second block in the same module. An associated item (method, associated const or\ntype) is `<parent id without its #kind>::<name>#<kind>`. Never contains a line number.\n\nWhat is an item (arch issue #14): everything rust-analyzer calls an item, including\nassociated items. Enum variants and struct fields are not items; see [`Link::member`].",
           "type": "string"
         },
         "kind": {
@@ -326,6 +326,13 @@
         "name": {
           "description": "Bare name (`subscribe`, `NewSubscriber`).",
           "type": "string"
+        },
+        "parent": {
+          "description": "For an associated item: the id of the `impl` or `trait` item it is declared in.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "reexported": {
           "description": "Reachable through a `pub use` somewhere in the crate.",
@@ -466,6 +473,13 @@
         "kind": {
           "$ref": "#/$defs/LinkKind",
           "description": "One of the 21 kinds in four families, or `refers-to` (FINDINGS F-3, issue #10)."
+        },
+        "member": {
+          "description": "The enum variant or struct field of the target that the link touches, by bare name, when\nthe source spells it out (`Paid` for `Status::Paid`, `total` for `o.total`, `0` for a tuple\nfield). Variants and fields are not items, so the target stays the type and the member is\ncarried here (arch issue #14). Absent when the link is about the target as a whole.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "reason": {
           "description": "For `guessed` links: the pattern that produced the guess; for unresolved targets: why.",

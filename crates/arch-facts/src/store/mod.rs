@@ -512,7 +512,7 @@ impl Store {
 }
 
 /// Sort every array by its stable key (`docs/arch-facts.md`): items, ports, externals by id;
-/// tables, crates by name; links by from, to, kind; entries by item; commits keep history order.
+/// tables, crates by name; links by from, to, kind, member; entries by item; commits keep history order.
 fn normalize(facts: &mut Facts) {
     facts.crates.sort_by(|a, b| a.name.cmp(&b.name));
     facts.items.sort_by(|a, b| a.id.cmp(&b.id));
@@ -521,6 +521,7 @@ fn normalize(facts: &mut Facts) {
             l.from.clone(),
             format!("{:?}", l.to),
             format!("{:?}", l.kind),
+            l.member.clone(),
         )
     });
     facts.ports.sort_by(|a, b| a.id.cmp(&b.id));

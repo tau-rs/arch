@@ -20,6 +20,7 @@ fn item(id: &str, file: &str) -> Item {
         },
         crate_name: "smallsvc".into(),
         module: "ship".into(),
+        parent: None,
         visibility: Visibility::Pub,
         reexported: false,
         flags: ItemFlags::default(),
