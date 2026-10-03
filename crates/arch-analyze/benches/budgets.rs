@@ -3,7 +3,9 @@
 //! | benchmark | budget | what is measured |
 //! |---|---|---|
 //! | `first_index_cold` | < 5 s | no cache; `target/` already built by a prior `cargo check`; from opening the analyzer to the first complete facts at `resolved` confidence |
-//! | `recompute_one_file` | < 500 ms | one source file saved; from the save on disk, through the watcher's debounce, to the new facts |
+//! | `recompute_body_only` | < 500 ms | one source file saved, function bodies only: that file is re-analysed, the others carried forward (ADR 0002); from the save on disk, through the watcher's debounce, to the new facts |
+//! | `recompute_declaration` | < 500 ms | one source file saved with a new declaration: the unit is re-analysed; same span |
+//! | `recompute_new_file` | < 500 ms | a new module file and the `mod` line reaching it; same span |
 //!
 //! Runs on a copy of `repos/smallsvc` from the fixtures pin (`scripts/fetch-fixtures.sh`), with
 //! `CARGO_TARGET_DIR` pointing at a directory this benchmark builds once, outside the timing.
@@ -18,8 +20,8 @@ use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
 use arch_analyze::watch::{Debounce, Watcher};
-use arch_analyze::{Analyzer, Commits, Depth, Options};
-use arch_facts::{Confidence, Store};
+use arch_analyze::{Analyzer, Commits, Depth, Options, Recompute};
+use arch_facts::{Confidence, Facts, Store, Target};
 
 const FIRST_INDEX_COLD: Duration = Duration::from_secs(5);
 const RECOMPUTE_ONE_FILE: Duration = Duration::from_millis(500);
@@ -40,14 +42,15 @@ fn copy_dir(from: &Path, to: &Path) {
 }
 
 /// Write `files`, wait for the watcher's batch and apply it; the time from the first write to the
-/// new facts, once the function `seen` and its resolved links are in them.
+/// new facts, once the analyzer recomputed as `expect` says and `seen` holds of the facts.
 fn save_and_apply(
     repo: &Path,
     watcher: &Watcher,
     analyzer: &mut Analyzer,
     store: &mut Store,
     files: &[(&Path, String)],
-    seen: &str,
+    expect: Recompute,
+    seen: &dyn Fn(&Facts) -> bool,
 ) -> Result<Duration, String> {
     let started = Instant::now();
     for (file, text) in files {
@@ -67,17 +70,29 @@ fn save_and_apply(
     {
         return Err(format!("the batch misses {}: {batch:?}", file.display()));
     }
+    if analyzer.last_recompute() != Some(&expect) {
+        return Err(format!(
+            "recomputed as {:?}, not {expect:?}",
+            analyzer.last_recompute()
+        ));
+    }
     let facts = store.facts(key).unwrap().unwrap();
-    let suffix = format!("{seen}#fn");
-    let ok = facts.items.iter().any(|i| i.name == seen)
-        && facts
-            .links
-            .iter()
-            .any(|l| l.from.ends_with(&suffix) && l.confidence == Confidence::Resolved);
-    if !ok {
-        return Err(format!("{seen} and its resolved links are missing"));
+    if !seen(&facts) {
+        return Err("the saved change is missing from the facts".into());
     }
     Ok(took)
+}
+
+/// The function `name` is in the facts with a resolved link out of it.
+fn new_fn(name: &'static str) -> impl Fn(&Facts) -> bool {
+    move |facts: &Facts| {
+        let suffix = format!("{name}#fn");
+        facts.items.iter().any(|i| i.name == name)
+            && facts
+                .links
+                .iter()
+                .any(|l| l.from.ends_with(&suffix) && l.confidence == Confidence::Resolved)
+    }
 }
 
 fn main() -> ExitCode {
@@ -138,20 +153,50 @@ fn main() -> ExitCode {
     // Watch before the save, outside the timing, and let the backend settle.
     let watcher = Watcher::new(std::slice::from_ref(&repo), Debounce::default()).unwrap();
     while watcher.recv_timeout(Duration::from_millis(300)).is_some() {}
+    // A body: `PayOrder::run` calls `Money::times` now.
     let pay = Path::new("src/app/pay.rs");
-    let mut text = std::fs::read_to_string(repo.join(pay)).unwrap();
-    text.push_str("\npub fn added_by_the_benchmark(order: &crate::domain::Order) -> usize { order.lines.len() }\n");
-    let recompute = match save_and_apply(
+    let text = std::fs::read_to_string(repo.join(pay)).unwrap().replacen(
+        "        order.mark_paid()?;\n",
+        "        order.mark_paid()?;\n        let _twice = amount.times(2);\n",
+        1,
+    );
+    let calls_times = |facts: &Facts| {
+        facts.links.iter().any(|l| {
+            l.from.ends_with("PayOrder::run#fn")
+                && matches!(&l.to, Target::Item(t) if t.ends_with("::times#fn"))
+                && l.confidence == Confidence::Resolved
+        })
+    };
+    let body_only = match save_and_apply(
         &repo,
         &watcher,
         &mut analyzer,
         &mut store,
         &[(pay, text)],
-        "added_by_the_benchmark",
+        Recompute::Files(vec![pay.to_path_buf()]),
+        &calls_times,
     ) {
         Ok(took) => took,
         Err(e) => {
-            eprintln!("recompute_one_file: {e}");
+            eprintln!("recompute_body_only: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // A declaration: a new function.
+    let mut text = std::fs::read_to_string(repo.join(pay)).unwrap();
+    text.push_str("\npub fn added_by_the_benchmark(order: &crate::domain::Order) -> usize { order.lines.len() }\n");
+    let declaration = match save_and_apply(
+        &repo,
+        &watcher,
+        &mut analyzer,
+        &mut store,
+        &[(pay, text)],
+        Recompute::Unit,
+        &new_fn("added_by_the_benchmark"),
+    ) {
+        Ok(took) => took,
+        Err(e) => {
+            eprintln!("recompute_declaration: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -169,7 +214,8 @@ fn main() -> ExitCode {
             (Path::new("src/app/refund.rs"), refund.into()),
             (module, text),
         ],
-        "refund_by_the_benchmark",
+        Recompute::Unit,
+        &new_fn("refund_by_the_benchmark"),
     ) {
         Ok(took) => took,
         Err(e) => {
@@ -190,13 +236,14 @@ fn main() -> ExitCode {
     let mut ok = true;
     for (name, took, budget) in [
         ("first_index_cold", first, FIRST_INDEX_COLD),
-        ("recompute_one_file", recompute, RECOMPUTE_ONE_FILE),
+        ("recompute_body_only", body_only, RECOMPUTE_ONE_FILE),
+        ("recompute_declaration", declaration, RECOMPUTE_ONE_FILE),
         ("recompute_new_file", new_file, RECOMPUTE_ONE_FILE),
     ] {
         let budget = budget.mul_f64(scale);
         let verdict = if took < budget { "ok" } else { "OVER BUDGET" };
         println!(
-            "{name:<20} {:>8.0} ms   budget {:>5} ms   {verdict}",
+            "{name:<22} {:>8.0} ms   budget {:>5} ms   {verdict}",
             took.as_secs_f64() * 1000.0,
             budget.as_millis()
         );

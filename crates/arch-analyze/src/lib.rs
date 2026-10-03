@@ -16,6 +16,7 @@
 //! # Ok::<(), arch_analyze::Error>(())
 //! ```
 
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use arch_facts::{
@@ -25,6 +26,7 @@ use arch_facts::{
 
 pub mod assemble;
 pub mod cargo;
+pub mod decl;
 pub mod git;
 pub mod items;
 pub mod package;
@@ -120,9 +122,30 @@ pub fn index(repo: &Path, options: &Options, store: &mut Store) -> Result<TreeKe
     Analyzer::open(repo, options.clone())?.index(store)
 }
 
+/// How an [`Analyzer::index`] recomputed the facts (ADR 0002).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Recompute {
+    /// The whole unit was analysed: the first index, or a change to a declaration, a manifest,
+    /// or the set of Rust files.
+    Unit,
+    /// Only these files were analysed: the save changed function bodies, or files that hold no
+    /// Rust. Every other file's delta was carried forward under its new key.
+    Files(Vec<PathBuf>),
+}
+
+/// What the last index saw, for the next one to recompute only what a save changed.
+#[derive(Debug)]
+struct Last {
+    /// Every file: its content hash and the key its facts are under.
+    files: HashMap<PathBuf, (ContentHash, FactsKey)>,
+    /// The declaration fingerprint of every Rust file the pass walked (`decl`).
+    decls: HashMap<String, String>,
+}
+
 /// An analyzer kept open on one repository. With [`Depth::Resolved`] it holds rust-analyzer
 /// loaded, so after [`Analyzer::file_changed`] the next [`Analyzer::index`] is incremental
-/// (spec §5: one-file recompute < 500 ms).
+/// (spec §5: one-file recompute < 500 ms). It also remembers what it last indexed: a save that
+/// changes function bodies only re-analyses the changed files (ADR 0002).
 #[derive(Debug)]
 pub struct Analyzer {
     root: PathBuf,
@@ -131,6 +154,20 @@ pub struct Analyzer {
     load_error: Option<String>,
     /// How the repository names its objects, for package ids (ADR 0002).
     format: package::ObjectFormat,
+    /// The unit plan, with what it was read from: manifests, lock file, `main_bin`.
+    plan: Option<(PlanInputs, cargo::UnitPlan)>,
+    last: Option<Last>,
+    recompute: Option<Recompute>,
+}
+
+/// What `cargo metadata` reads: every manifest, the lock file, cargo's configuration, and the
+/// `areas.toml` choice of main binary.
+type PlanInputs = (Option<String>, Vec<(PathBuf, ContentHash)>);
+
+fn is_plan_input(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|n| n == "Cargo.toml" || n == "Cargo.lock")
+        || path.starts_with(".cargo")
 }
 
 impl Analyzer {
@@ -161,7 +198,15 @@ impl Analyzer {
             session,
             load_error,
             format,
+            plan: None,
+            last: None,
+            recompute: None,
         })
+    }
+
+    /// How the last [`Analyzer::index`] recomputed the facts.
+    pub fn last_recompute(&self) -> Option<&Recompute> {
+        self.recompute.as_ref()
     }
 
     /// Why the facts are syntax-level only, when they are.
@@ -212,7 +257,11 @@ impl Analyzer {
     /// Analyze into `store`: `put_tree` with every file's delta under its facts key (ADR 0002),
     /// then `set_worktree`. Returns the key; `store.facts(key)` assembles the facts.
     ///
-    /// The whole unit is analysed on each call.
+    /// Against what the analyzer last indexed: when the Rust files that changed changed function
+    /// bodies only (their declaration fingerprint is the same), only the changed files are
+    /// analysed and every other file's delta is carried forward under its new key; otherwise the
+    /// whole unit is. Either way the facts are what a cold analysis gives
+    /// (`tests/incremental.rs`). [`Analyzer::last_recompute`] says which it was.
     pub fn index(&mut self, store: &mut Store) -> Result<TreeKey, Error> {
         let root = self.root.clone();
         let options = &self.options;
@@ -229,6 +278,7 @@ impl Analyzer {
         };
         let mut hashed: Vec<(PathBuf, ContentHash)> = Vec::with_capacity(files.len());
         let mut blobs: Vec<(PathBuf, package::Blob)> = Vec::with_capacity(files.len());
+        let mut texts: HashMap<PathBuf, String> = HashMap::new();
         for f in &files {
             let path = root.join(f);
             let io = |source| Error::Io {
@@ -237,6 +287,11 @@ impl Analyzer {
             };
             let bytes = std::fs::read(&path).map_err(io)?;
             hashed.push((f.clone(), ContentHash::of_bytes(&bytes)));
+            if f.extension().is_some_and(|e| e == "rs")
+                && let Ok(text) = std::str::from_utf8(&bytes)
+            {
+                texts.insert(f.clone(), text.to_string());
+            }
             blobs.push((
                 f.clone(),
                 package::Blob::of_file(self.format, &path, &bytes).map_err(io)?,
@@ -267,8 +322,26 @@ impl Analyzer {
         } else {
             None
         };
-        let plan =
-            cargo::read(&root, main_bin.as_deref()).map_err(|e| unit_err(format!("{e:#}")))?;
+        let inputs: PlanInputs = (
+            main_bin.clone(),
+            hashed
+                .iter()
+                .filter(|(p, _)| is_plan_input(p))
+                .cloned()
+                .collect(),
+        );
+        let plan_changed = self.plan.as_ref().is_none_or(|(i, _)| *i != inputs);
+        if plan_changed {
+            let plan =
+                cargo::read(&root, main_bin.as_deref()).map_err(|e| unit_err(format!("{e:#}")))?;
+            self.plan = Some((inputs, plan));
+        }
+        let plan = self.plan.as_ref().expect("read above").1.clone();
+        let only = if plan_changed {
+            None
+        } else {
+            self.changed_bodies(&hashed, &texts, store)?
+        };
 
         let name = options
             .repo_name
@@ -278,8 +351,8 @@ impl Analyzer {
         let scope = format!("unit:{name}");
         // The database may move to another thread but not be shared with one: lend it mutably.
         let session = self.session.as_mut();
-        let (r, p, sc, fs) = (&root, &plan, &scope, &files);
-        let out = big_stack(move || pass::run(r, p, sc, fs, session.as_deref()))
+        let (r, p, sc, fs, o) = (&root, &plan, &scope, &files, only.as_ref());
+        let out = big_stack(move || pass::run(r, p, sc, fs, session.as_deref(), o))
             .map_err(|e| unit_err(format!("{e:#}")))?;
 
         let reason = self.degraded().map(|r| match &plan.cargo_error {
@@ -335,6 +408,15 @@ impl Analyzer {
         let mut deltas = Vec::with_capacity(hashed.len());
         for (path, hash) in &hashed {
             let rel = path.to_string_lossy().replace('\\', "/");
+            if let Some(only) = &only
+                && !only.contains(&rel)
+            {
+                // Unchanged: its delta is carried forward (checked present by `changed_bodies`).
+                let last = self.last.as_ref().expect("a last index to compare with");
+                let (_, old) = &last.files[path];
+                deltas.push(store.file_facts(old)?.expect("checked present"));
+                continue;
+            }
             let mut facts = FileFacts::empty(path.clone(), hash.clone());
             if let Some(parts) = out.files.get(&rel) {
                 facts.items = parts.items.clone();
@@ -356,7 +438,7 @@ impl Analyzer {
         let hashes: Vec<String> = commits.iter().map(|c| c.hash.clone()).collect();
         let tree_files: Vec<TreeFile> = hashed
             .iter()
-            .zip(keys)
+            .zip(keys.iter().cloned())
             .map(|((path, file_hash), facts_key)| TreeFile {
                 path: path.clone(),
                 file_hash: file_hash.clone(),
@@ -376,7 +458,83 @@ impl Analyzer {
         // worktree is on it (ADR 0002).
         let branch = in_git.then(|| git::current_branch(&root)).flatten();
         store.set_worktree(&root, &key, head.as_deref(), branch.as_deref())?;
+
+        // Remember what was indexed, for the next save.
+        let mut decls = self.last.take().map(|l| l.decls).unwrap_or_default();
+        if only.is_none() {
+            decls.clear();
+        }
+        for rel in &out.rust_files {
+            if only.as_ref().is_none_or(|o| o.contains(rel))
+                && let Some(text) = texts.get(Path::new(rel))
+            {
+                decls.insert(rel.clone(), decl::fingerprint(text));
+            }
+        }
+        self.last = Some(Last {
+            files: hashed
+                .iter()
+                .zip(keys)
+                .map(|((p, h), k)| (p.clone(), (h.clone(), k)))
+                .collect(),
+            decls,
+        });
+        self.recompute = Some(match only {
+            None => Recompute::Unit,
+            Some(o) => Recompute::Files(o.into_iter().map(PathBuf::from).collect()),
+        });
         Ok(key)
+    }
+
+    /// The files to analyse when the save since the last index changed function bodies only,
+    /// or files that hold no Rust; `None` when the whole unit must be: no last index, a Rust
+    /// file added or removed, a declaration changed, or a delta to carry is gone from `store`.
+    fn changed_bodies(
+        &self,
+        hashed: &[(PathBuf, ContentHash)],
+        texts: &HashMap<PathBuf, String>,
+        store: &Store,
+    ) -> Result<Option<BTreeSet<String>>, Error> {
+        let Some(last) = &self.last else {
+            return Ok(None);
+        };
+        let is_rs = |p: &Path| p.extension().is_some_and(|e| e == "rs");
+        let now: HashMap<&Path, &ContentHash> =
+            hashed.iter().map(|(p, h)| (p.as_path(), h)).collect();
+        if last
+            .files
+            .keys()
+            .any(|p| is_rs(p) && !now.contains_key(p.as_path()))
+        {
+            return Ok(None);
+        }
+        let mut only = BTreeSet::new();
+        for (path, hash) in hashed {
+            let rel = path.to_string_lossy().replace('\\', "/");
+            match last.files.get(path) {
+                None if is_rs(path) => return Ok(None),
+                None => {
+                    only.insert(rel);
+                }
+                Some((old, _)) if old != hash => {
+                    if let Some(before) = last.decls.get(&rel) {
+                        let Some(text) = texts.get(path) else {
+                            return Ok(None);
+                        };
+                        if &decl::fingerprint(text) != before {
+                            return Ok(None);
+                        }
+                    }
+                    only.insert(rel);
+                }
+                Some((_, key)) => {
+                    if !store.has_file_facts(key)? {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+        Ok(Some(only))
     }
 
     /// The facts key of each file (ADR 0002): its path, its content hash and the id of its

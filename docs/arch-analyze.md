@@ -70,8 +70,8 @@ one package and the workspace libs it reaches, and rust-analyzer loads them toge
 degrade needs a per-crate signal that it does not expose through this API.
 
 Budgets (ADR 0026) are benchmarks with thresholds: `cargo bench -p arch-analyze` runs
-`first_index_cold` (< 5 s) and `recompute_one_file` (< 500 ms) on smallsvc and fails when one is
-crossed.
+`first_index_cold` (< 5 s) and, each < 500 ms from the save on disk, `recompute_body_only`,
+`recompute_declaration` and `recompute_new_file` on smallsvc, and fails when one is crossed.
 
 ## What the syntax-level pass produces, and how it guesses
 
@@ -106,7 +106,23 @@ of another target carry `<crate>[<kind>:<target>]`, e.g. `orderly[bin:orderly]::
 `index` records the tree with one `FileFacts` per file of the tree (`put_tree`); files that are
 not sources of the unit get an empty delta, so `missing_file_facts` is empty afterwards. It then
 points the worktree at the tree (`set_worktree`), which forgets the state the worktree left.
-The pass still recomputes the whole unit on each call.
+What a save costs (ADR 0002). The analyzer remembers what it last indexed: each file's content
+hash and facts key, and each walked Rust file's *declaration fingerprint* (`decl`): its tokens
+without whitespace or comments, function bodies left out except for the items declared inside
+them (`const fn` bodies and `const`/`static` initializers kept).
+
+| the save changes | what is analysed |
+|---|---|
+| Rust files whose fingerprint is unchanged (bodies, comments) | those files only (`Recompute::Files`); every other delta is carried forward under its new key |
+| files that hold no Rust (a migration, a README) | nothing is walked; a migration's tables are read again |
+| a fingerprint, or adds or removes a Rust file | the unit (`Recompute::Unit`) |
+| a manifest, `Cargo.lock`, `.cargo/`, or `areas.toml`'s `main_bin` | the unit, after `cargo metadata` runs again; otherwise the unit plan is reused |
+
+Only the changed files are walked and resolved, but the unit is still read whole, since its
+declarations resolve their names. `tests/incremental.rs` (`incremental_equals_cold`) proves the
+result equals a cold analysis byte for byte: scripted saves of each kind and their undo, and the
+same saves in every order, at syntax depth in `cargo test` and at resolved depth in release in
+CI's budgets job.
 
 Each delta is stored under its facts key (ADR 0002): `hash(path · content hash · package id)`.
 The package id is computed in-process (`package`), in git's object format, from the bytes `index`
