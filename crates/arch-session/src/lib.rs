@@ -2,11 +2,13 @@
 //! thread, resolve element.
 //!
 //! Depends on facts, views, driver and forge. Milestone 5 of `handoff-arch.md` (issue #47).
-//! Present today: [`machine`] (the one transition table over [`arch_facts::SessionState`]) and
-//! [`shaper`] (the core shaper: groups by dependency, one gate per group). The session record
+//! Present today: [`machine`] (the one transition table over [`arch_facts::SessionState`]),
+//! [`shaper`] (the core shaper: groups by dependency, one gate per group) and [`pack`] (the
+//! context pack, ADR 0005). The session record
 //! the scheduler resumes from is [`arch_facts::Session`], `.arch/sessions/<id>/session.toml`.
 
 pub mod machine;
+pub mod pack;
 pub mod shaper;
 
 pub use machine::{Trigger, next};
