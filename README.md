@@ -8,7 +8,19 @@ The record of decisions lives in [`tau-rs/arch-design`](https://github.com/tau-r
 
 See `handoffs/handoff-arch.md` in arch-design for the engineering brief.
 
+## Use
+
+```
+arch init           # writes .arch/areas.toml and .arch/rules, one commit, no questions
+arch check          # findings against .arch/rules; exit 0 clean or warnings, 1 blocking, 2 tool error
+arch check --format json
+```
+
+Details in `docs/arch-cli.md`.
+
 ## Contracts published here
+
+- `schemas/check.schema.json` — what `arch check --format json` prints. Generated from `arch_api::CheckOutput`; drift-tested.
 
 - `schemas/facts.schema.json` — the fact document (`facts.json`) that `arch-analyze` produces and `arch-fixtures` pins as golden files. Generated from `crates/arch-facts/src/model.rs`; `cargo test -p arch-facts` fails when the committed file drifts. Rules in `docs/arch-facts.md`.
 - `fixtures/pin.toml` — the arch-fixtures commit and the target repositories (zero2prod for milestone 4).

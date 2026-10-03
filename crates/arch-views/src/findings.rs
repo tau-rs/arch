@@ -20,6 +20,7 @@ use arch_facts::{
     Allow, Allows, Areas, Confidence, External, Facts, Item, Level, Link, LinkKind, Port, Rule,
     Rules, Side, Target, Witness,
 };
+use schemars::JsonSchema;
 use serde::Serialize;
 
 use crate::Error;
@@ -30,7 +31,7 @@ use crate::propose::{is_io, is_test_code};
 const EXTERNALS: &str = "externals";
 
 /// One rule violation on one link.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct Finding {
     /// The rule as `.arch/allows` spells it: `domain must not depend-on driven`.
     pub rule: String,
@@ -63,7 +64,7 @@ pub struct Finding {
 }
 
 /// The allow that covers a finding.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct Allowed {
     /// Who allowed it.
     pub by: String,
@@ -79,7 +80,7 @@ impl Finding {
 }
 
 /// The findings of one run, sorted by site, target, rule and kind.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, JsonSchema)]
 pub struct Report {
     /// Every finding, allowed ones included.
     pub findings: Vec<Finding>,

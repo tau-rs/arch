@@ -17,4 +17,11 @@ arch-views.workspace = true
 arch-session.workspace = true
 arch-forge.workspace = true
 arch-driver.workspace = true
-anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+jsonschema.workspace = true
