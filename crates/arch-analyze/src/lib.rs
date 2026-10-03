@@ -19,8 +19,8 @@
 use std::path::{Path, PathBuf};
 
 use arch_facts::{
-    Analyzer as Analyzer_, ArchDir, ContentHash, Degraded, Facts, FileFacts, Repo, Store, TreeHead,
-    TreeKey, Unit,
+    Analyzer as Analyzer_, ArchDir, ContentHash, Degraded, Event, Facts, FileFacts, Repo, Store,
+    TreeHead, TreeKey, Unit,
 };
 
 pub mod cargo;
@@ -29,6 +29,7 @@ pub mod items;
 pub mod pass;
 pub mod ra;
 pub mod sql;
+pub mod watch;
 
 /// The reason recorded on every crate and file the syntax-level pass produced.
 pub const SYNTAX_REASON: &str = "syntax-level pass: not type-checked";
@@ -55,6 +56,9 @@ pub enum Error {
     /// Git answered with an error.
     #[error("git: {0}")]
     Git(String),
+    /// The file-system watcher failed.
+    #[error("watcher: {0}")]
+    Watch(String),
     /// The store or an `.arch/` file failed.
     #[error(transparent)]
     Facts(#[from] arch_facts::Error),
@@ -159,14 +163,40 @@ impl Analyzer {
         }
     }
 
-    /// Tell the analyzer a file changed on disk (repository-relative path).
+    /// Tell the analyzer a file changed on disk (repository-relative path), or is gone.
     pub fn file_changed(&mut self, rel: &Path) -> Result<(), Error> {
         let path = self.root.join(rel);
-        let text = std::fs::read_to_string(&path).map_err(|source| Error::Io { path, source })?;
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => Some(text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(source) => return Err(Error::Io { path, source }),
+        };
         if let Some(s) = &mut self.session {
             s.file_changed(&rel.to_string_lossy().replace('\\', "/"), text);
         }
         Ok(())
+    }
+
+    /// Apply a watcher batch of this analyzer's worktree: tell it each changed file, index into
+    /// `store`, and return the events: one `FilesChanged` per writer, then `FactsUpdated` naming
+    /// the changed files.
+    pub fn apply(&mut self, batch: &watch::Batch, store: &mut Store) -> Result<Vec<Event>, Error> {
+        if batch.worktree != self.root {
+            return Err(Error::Unit {
+                path: self.root.clone(),
+                reason: format!("a batch of another worktree: {}", batch.worktree.display()),
+            });
+        }
+        for c in &batch.changes {
+            self.file_changed(&c.path)?;
+        }
+        let tree = self.index(store)?;
+        let mut events = batch.files_changed();
+        events.push(Event::FactsUpdated {
+            tree,
+            files: batch.changes.iter().map(|c| c.path.clone()).collect(),
+        });
+        Ok(events)
     }
 
     /// Analyze into `store`: `put_tree → put_file_facts → facts(key)`. Returns the key.
