@@ -45,6 +45,9 @@ jobs:
       - run: cargo bench -p arch-analyze --bench budgets
         env:
           ARCH_BUDGET_SCALE: "2"
+      # incremental_equals_cold at resolved depth (ADR 0002): rust-analyzer loads once per cold
+      # analysis, too slow for a debug build.
+      - run: cargo test --release -p arch-analyze --test incremental -- --ignored
 
   zero2prod:
     name: "arch check on zero2prod (milestone 4)"

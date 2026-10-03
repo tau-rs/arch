@@ -2196,24 +2196,40 @@ fn flatten(tree: &ast::UseTree, prefix: &[String], out: &mut Vec<UseLeaf>) {
 /// Run the pass over the unit `plan` describes. `tree_files` are the repository's files, for
 /// finding migrations. With a rust-analyzer `session`, links come from the type-checked view
 /// and only the pattern links stay guessed.
+///
+/// With `only`, the unit is read whole (its declarations resolve names) but only the files named
+/// are walked: their parts are what a whole pass gives them, the other files' are left out
+/// except for what the walk itself records (`walk`, `owners`, `unresolved`).
 pub fn run(
     root: &Path,
     plan: &UnitPlan,
     scope: &str,
     tree_files: &[PathBuf],
     session: Option<&crate::ra::Session>,
+    only: Option<&BTreeSet<String>>,
 ) -> Result<Output> {
     let mut unit = Unit::load(root, plan, scope).context("reading the unit's sources")?;
+    let walked: HashSet<usize> = (0..unit.files.len())
+        .filter(|fi| only.is_none_or(|o| o.contains(&unit.files[*fi].path)))
+        .collect();
     for fi in 0..unit.files.len() {
-        unit.visit_file(fi);
+        if walked.contains(&fi) {
+            unit.visit_file(fi);
+        }
     }
     if let Some(session) = session {
-        unit.resolve_links(session);
+        unit.resolve_links(session, only.map(|_| &walked));
     }
     let mut out = unit.finish();
+    if let Some(only) = only {
+        out.files.retain(|path, _| only.contains(path));
+    }
     // Tables from migrations.
     for path in tree_files {
         let p = path.to_string_lossy().replace('\\', "/");
+        if only.is_some_and(|o| !o.contains(&p)) {
+            continue;
+        }
         if !(p.ends_with(".sql") && p.split('/').any(|s| s == "migrations")) {
             continue;
         }

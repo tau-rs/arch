@@ -3,7 +3,7 @@
 //! crate), and the same table as the syntax pass turns name-in-context into a link, now
 //! `resolved`. Pattern links (routes, hand-offs, SQL, wiring, HTTP hosts) stay as guessed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use arch_facts::{Access, ItemKind, LinkKind, Target};
 use ra_ap_hir::{AsAssocItem, AssocItemContainer, Semantics, Variant, attach_db};
@@ -42,11 +42,12 @@ struct Resolver<'a, 'db> {
 
 impl Unit<'_> {
     /// Replace the guessed links of the files rust-analyzer has a module for with resolved ones.
-    pub(super) fn resolve_links(&mut self, session: &Session) {
-        attach_db(&session.db, || self.resolve_attached(session));
+    /// `only` limits the resolution to some of the unit's files, by index.
+    pub(super) fn resolve_links(&mut self, session: &Session, only: Option<&HashSet<usize>>) {
+        attach_db(&session.db, || self.resolve_attached(session, only));
     }
 
-    fn resolve_attached(&mut self, session: &Session) {
+    fn resolve_attached(&mut self, session: &Session, only: Option<&HashSet<usize>>) {
         let mut names = HashMap::new();
         for (i, it) in self.items.iter().enumerate() {
             let name = it.f.node.children().find(|c| c.kind() == SyntaxKind::NAME);
@@ -79,6 +80,10 @@ impl Unit<'_> {
             })
             .partition(|(_, id)| id.is_some());
         self.unresolved = unresolved.into_iter().map(|(fi, _)| fi).collect();
+        let loaded: Vec<_> = loaded
+            .into_iter()
+            .filter(|(fi, _)| only.is_none_or(|o| o.contains(fi)))
+            .collect();
         let loaded: Vec<(usize, ra_ap_vfs::FileId)> = loaded
             .into_iter()
             .filter_map(|(fi, id)| Some((fi, id?)))
