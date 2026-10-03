@@ -28,7 +28,7 @@ use crate::placement::{Placement, Placements, side_name};
 use crate::propose::{is_io, is_test_code};
 
 /// The name `.arch/rules` uses for everything outside the unit.
-const EXTERNALS: &str = "externals";
+pub(crate) const EXTERNALS: &str = "externals";
 
 /// One rule violation on one link.
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
@@ -179,13 +179,13 @@ impl Finding {
 }
 
 /// The far end of a link, as rules see it.
-struct FarEnd {
+pub(crate) struct FarEnd {
     /// Display form: an allow-style site for an item, an id otherwise.
     target: String,
     /// The target item's id, when the target is an item.
     item_id: Option<String>,
     /// Area name, or `externals`.
-    area: String,
+    pub(crate) area: String,
     /// Side name, when the area has one; `externals` for everything outside the unit.
     side: Option<&'static str>,
 }
@@ -196,7 +196,7 @@ impl FarEnd {
     }
 }
 
-fn far_end(
+pub(crate) fn far_end(
     link: &Link,
     items: &BTreeMap<&str, &Item>,
     externals: &BTreeMap<&str, &External>,

@@ -3,12 +3,14 @@
 //!
 //! Depends on facts, views, driver and forge. Milestone 5 of `handoff-arch.md` (issue #47).
 //! Present today: [`machine`] (the one transition table over [`arch_facts::SessionState`]),
-//! [`shaper`] (the core shaper: groups by dependency, one gate per group) and [`accept()`]
-//! (branch, worktree, `.arch/sessions/<id>/`, one commit). The session record
+//! [`shaper`] (the core shaper: groups by dependency, one gate per group), [`accept()`]
+//! (branch, worktree, `.arch/sessions/<id>/`, one commit) and [`pack`] (the context pack,
+//! ADR 0005). The session record
 //! the scheduler resumes from is [`arch_facts::Session`], `.arch/sessions/<id>/session.toml`.
 
 pub mod accept;
 pub mod machine;
+pub mod pack;
 pub mod shaper;
 
 pub use accept::{AcceptOptions, accept};
