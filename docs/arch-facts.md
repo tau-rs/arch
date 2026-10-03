@@ -96,6 +96,7 @@ flowchart LR
 | `sessions/<id>/plan.toml` | `Plan` | elements (`ElementId` = `sha256(session · intention · site)[:8]`, label `E<n>`), groups, gates |
 | `sessions/<id>/thread.jsonl` | `ThreadEntry` per line | arch's own thread; driver session id and transcript path as pointers |
 | `sessions/<id>/records/NNNN-<kind>.toml` | `Record` | gate-output · judge-verdict · denial · override · resolution, each with witnesses |
+| `cache/tool-layer/<element>.json` | `ToolLayerState` | gitignored; JSON: `session · element · expected[{path, sha256}] · read{path: sha256} · writes[{path, sha256, at}]`. arch-driver's hooks and MCP `read` write it under a lock (`ToolLayerFile::update`); the watcher reads `expected` (ADR 0012, arch-design#34) |
 | `refs/notes/arch` | `Archive` | at merge, `Archive::move_to_notes` writes the folder as one TOML note and removes it from the tree |
 
 ## The arch-fixtures pin
