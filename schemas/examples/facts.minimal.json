@@ -181,6 +181,8 @@
   "entries": [
     {
       "item": "smallsvc::main#fn",
+      "kind": "main",
+      "confidence": "resolved",
       "witness": {
         "kind": "span",
         "file": "src/main.rs",
@@ -189,7 +191,9 @@
     },
     {
       "item": "smallsvc::routes::health#fn",
+      "kind": "framework",
       "framework": "actix",
+      "confidence": "resolved",
       "witness": {
         "kind": "span",
         "file": "src/main.rs",

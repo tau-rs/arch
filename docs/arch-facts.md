@@ -49,6 +49,7 @@ query without the map growing a box per field.
 | 10 degrade to syntax-only facts, reason recorded | `Analyzer.degraded` |
 | 16 commits as facts with trailers | `Commit`, `Trailer` |
 | 21 content-addressed element ids | `Commit.element` |
+| 28 entry kinds: main · framework · spawned worker | `Entry.kind`, `Entry.confidence` |
 
 Open: the link-kind list (FINDINGS F-3, arch-design issue 16, arch issue #10).
 

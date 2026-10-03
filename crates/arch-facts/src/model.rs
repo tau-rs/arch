@@ -595,11 +595,28 @@ pub struct External {
 pub struct Entry {
     /// The item.
     pub item: String,
-    /// The framework that holds the entry; absent for a plain `main`, test or bench.
+    /// How the outside world starts this code (ADR 0028).
+    pub kind: EntryKind,
+    /// The framework that holds the entry; present only when `kind` is `framework`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub framework: Option<Framework>,
+    /// How sure the analyzer is. ADR 0028: a spawned worker is `resolved` when the spawn is in
+    /// `main`'s closure and `guessed` otherwise; ADR 0027 reads area sides from entries.
+    pub confidence: Confidence,
     /// Why it is an entry.
     pub witness: Witness,
+}
+
+/// The three ways code gets started (spec §7 as amended by ADR 0028).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum EntryKind {
+    /// `fn main` of the unit's bin.
+    Main,
+    /// Held by a framework: a handler it calls, or the generic callback rule.
+    Framework,
+    /// Started once at start-up through a spawn call, then loops for the life of the process.
+    SpawnedWorker,
 }
 
 /// Frameworks that hold entries (spec §7 table), plus the generic rule.
@@ -737,6 +754,23 @@ mod tests {
             ..link
         };
         assert_eq!(serde_json::to_value(&with).unwrap()["member"], "Paid");
+    }
+
+    #[test]
+    fn entry_kind_is_required_and_kebab_case() {
+        let entry: Entry = serde_json::from_value(serde_json::json!({
+            "item": "c::worker::run#fn", "kind": "spawned-worker", "confidence": "resolved",
+            "witness": {"kind": "span", "file": "src/main.rs", "line": 16}
+        }))
+        .unwrap();
+        assert_eq!(entry.kind, EntryKind::SpawnedWorker);
+        assert_eq!(entry.framework, None);
+
+        let missing_kind = serde_json::from_value::<Entry>(serde_json::json!({
+            "item": "c::main#fn", "confidence": "resolved",
+            "witness": {"kind": "span", "file": "src/main.rs", "line": 1}
+        }));
+        assert!(missing_kind.is_err());
     }
 
     #[test]
