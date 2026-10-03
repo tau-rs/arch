@@ -3,7 +3,7 @@
 
 [arch-fixtures]
 repo = "https://github.com/tau-rs/arch-fixtures"
-commit = "42c5699f836c83b4f68090c33586910ffc8c21db"   # main, 2026-10-02: smallsvc, sizes.json, invariants harness (its PR #2)
+commit = "514db9fba48c13febbd90adab7ce173f57cbca35"   # main, 2026-10-03: first smallsvc golden facts.json (its PR #10)
 
 [repos.zero2prod]
 repo = "https://github.com/LukeMathWalker/zero-to-production"

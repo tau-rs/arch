@@ -191,6 +191,9 @@ dependencies = [
  "arch-facts",
  "arch-forge",
  "arch-views",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]

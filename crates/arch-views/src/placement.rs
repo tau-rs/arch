@@ -65,6 +65,14 @@ impl Placements {
     pub fn of(&self, item: &Item) -> Option<&Placement> {
         self.of_file(&item.file)
     }
+
+    /// The placement of an area, by name.
+    pub fn by_area(&self, name: &str) -> Option<&Placement> {
+        self.areas
+            .iter()
+            .find(|(p, _)| p.area == name)
+            .map(|(p, _)| p)
+    }
 }
 
 /// The name a side goes by in `.arch/rules` (`driving`, `domain`, `public-api`, …).
