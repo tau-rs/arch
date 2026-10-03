@@ -57,8 +57,24 @@ pub fn mcp(
     })
 }
 
-/// The [`Project`] port over arch-api's own methods.
-struct ArchProject;
+/// The ports of the tool layer ([`Project`]) and of the session engine
+/// ([`arch_session::Project`]) over arch-api's own methods: `check()`, the analyzer, the areas.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ArchProject;
+
+impl arch_session::Project for ArchProject {
+    fn check(&self, worktree: &Path) -> Result<serde_json::Value, String> {
+        Project::check(self, worktree)
+    }
+
+    fn facts(&self, worktree: &Path) -> Result<arch_facts::Facts, String> {
+        let options = arch_analyze::Options {
+            commits: arch_analyze::Commits::None,
+            ..arch_analyze::Options::default()
+        };
+        arch_analyze::analyze(worktree, &options).map_err(|e| e.to_string())
+    }
+}
 
 impl Project for ArchProject {
     fn check(&self, worktree: &Path) -> Result<serde_json::Value, String> {

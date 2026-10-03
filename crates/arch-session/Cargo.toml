@@ -17,8 +17,8 @@ arch-driver.workspace = true
 arch-forge.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
-serde_json.workspace = true
 tempfile.workspace = true
