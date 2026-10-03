@@ -191,6 +191,7 @@ dependencies = [
  "arch-facts",
  "arch-forge",
  "arch-views",
+ "pretty_assertions",
  "serde_json",
  "tempfile",
  "thiserror",
