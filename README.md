@@ -4,7 +4,7 @@
 
 The record of decisions lives in [`tau-rs/arch-design`](https://github.com/tau-rs/arch-design): the spec, the flow pages and the ADRs. This repo implements them and does not decide alone; a decision not in `adr/` is asked there as an issue labelled `from:arch`.
 
-**Synced to: ADR 0024** (2026-10-02).
+**Synced to: ADR 0029** (2026-10-03).
 
 See `handoffs/handoff-arch.md` in arch-design for the engineering brief.
 
@@ -16,7 +16,7 @@ arch check          # findings against .arch/rules; exit 0 clean or warnings, 1 
 arch check --format json
 ```
 
-Details in `docs/arch-cli.md`.
+Details in `docs/arch-cli.md`. CI runs both on zero2prod at the commit in `fixtures/pin.toml` and fails on a blocking finding or a tool error (`scripts/check-zero2prod.sh`, milestone 4).
 
 ## Contracts published here
 
@@ -35,4 +35,5 @@ Details in `docs/arch-cli.md`.
 cargo test --workspace
 scripts/check-dep-direction.sh
 ARCH_UPDATE_SCHEMA=1 cargo test -p arch-facts   # regenerate schemas/facts.schema.json after a type change
+scripts/check-zero2prod.sh                      # milestone 4 proof: arch init + arch check on zero2prod at the pin
 ```

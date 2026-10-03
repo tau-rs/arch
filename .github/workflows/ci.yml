@@ -46,6 +46,27 @@ jobs:
         env:
           ARCH_BUDGET_SCALE: "2"
 
+  zero2prod:
+    name: "arch check on zero2prod (milestone 4)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: zero2prod
+      # Fails on exit 1 (a blocking finding) or 2 (a tool error). Syntax-level facts only
+      # warn (ADR 0009), so this proves the pipeline until resolved facts make findings block.
+      - run: scripts/check-zero2prod.sh
+        env:
+          ARCH_REPORT: ${{ runner.temp }}/zero2prod-check.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zero2prod-check
+          path: ${{ runner.temp }}/zero2prod-check.json
+          if-no-files-found: ignore
+
   dependency-direction:
     name: dependency direction (arrows go one way)
     runs-on: ubuntu-latest
