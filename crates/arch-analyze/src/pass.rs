@@ -13,8 +13,8 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use arch_facts::{
-    Access, Confidence, Entry, External, Framework, Item, ItemKind, Link, LinkFlags, LinkKind,
-    Origin, Port, PortKind, QueueUse, Section, Side, Table, Target, Witness,
+    Access, Confidence, Entry, EntryKind, External, Framework, Item, ItemKind, Link, LinkFlags,
+    LinkKind, Origin, Port, PortKind, QueueUse, Section, Side, Table, Target, Witness,
 };
 use ra_ap_syntax::ast::{self, AstNode, HasArgList, HasName, HasVisibility};
 use ra_ap_syntax::{Edition, SyntaxKind, SyntaxNode};
@@ -2037,7 +2037,9 @@ impl<'a> Unit<'a> {
                     i,
                     Entry {
                         item: it.f.item.id.clone(),
+                        kind: EntryKind::Main,
                         framework: None,
+                        confidence: Confidence::Guessed,
                         witness,
                     },
                 );
@@ -2047,7 +2049,9 @@ impl<'a> Unit<'a> {
         for r in &self.routes {
             entries.entry(r.handler).or_insert(Entry {
                 item: self.id(r.handler).to_string(),
+                kind: EntryKind::Framework,
                 framework: Some(r.framework.clone()),
+                confidence: Confidence::Guessed,
                 witness: r.witness.clone(),
             });
             let id = format!("port:http:{}", r.name);
@@ -2066,7 +2070,9 @@ impl<'a> Unit<'a> {
         for (worker, witness) in self.spawned_workers(&known) {
             entries.entry(worker).or_insert(Entry {
                 item: self.id(worker).to_string(),
+                kind: EntryKind::SpawnedWorker,
                 framework: None,
+                confidence: Confidence::Guessed,
                 witness,
             });
         }

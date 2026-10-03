@@ -190,6 +190,10 @@
       "additionalProperties": false,
       "description": "An entry point.",
       "properties": {
+        "confidence": {
+          "$ref": "#/$defs/Confidence",
+          "description": "How sure the analyzer is. ADR 0028: a spawned worker is `resolved` when the spawn is in\n`main`'s closure and `guessed` otherwise; ADR 0027 reads area sides from entries."
+        },
         "framework": {
           "anyOf": [
             {
@@ -199,11 +203,15 @@
               "type": "null"
             }
           ],
-          "description": "The framework that holds the entry; absent for a plain `main`, test or bench."
+          "description": "The framework that holds the entry; present only when `kind` is `framework`."
         },
         "item": {
           "description": "The item.",
           "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/EntryKind",
+          "description": "How the outside world starts this code (ADR 0028)."
         },
         "witness": {
           "$ref": "#/$defs/Witness",
@@ -212,9 +220,31 @@
       },
       "required": [
         "item",
+        "kind",
+        "confidence",
         "witness"
       ],
       "type": "object"
+    },
+    "EntryKind": {
+      "description": "The three ways code gets started (spec §7 as amended by ADR 0028).",
+      "oneOf": [
+        {
+          "const": "main",
+          "description": "`fn main` of the unit's bin.",
+          "type": "string"
+        },
+        {
+          "const": "framework",
+          "description": "Held by a framework: a handler it calls, or the generic callback rule.",
+          "type": "string"
+        },
+        {
+          "const": "spawned-worker",
+          "description": "Started once at start-up through a spawn call, then loops for the life of the process.",
+          "type": "string"
+        }
+      ]
     },
     "External": {
       "additionalProperties": false,
