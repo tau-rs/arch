@@ -28,7 +28,7 @@ jobs:
       - run: cargo build --workspace --bins
 
   budgets:
-    name: budgets (ADR 0026: first index, one-file recompute)
+    name: "budgets (ADR 0026): first index, one-file recompute"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
