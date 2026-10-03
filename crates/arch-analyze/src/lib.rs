@@ -280,7 +280,14 @@ impl Analyzer {
                     reason: reason.clone(),
                 })
                 .collect(),
-            None => Vec::new(),
+            None => out
+                .unresolved
+                .iter()
+                .map(|(krate, files)| Degraded {
+                    crate_name: krate.clone(),
+                    reason: unresolved_reason(files),
+                })
+                .collect(),
         };
         let version = format!("{}+ra_ap_{}", env!("CARGO_PKG_VERSION"), ra::RA_VERSION);
         let mut tree_head = TreeHead {
@@ -318,7 +325,10 @@ impl Analyzer {
                 facts.notes = assemble::to_value(&parts.notes);
             }
             if out.rust_files.contains(&rel) {
-                facts.degraded = reason.clone();
+                facts.degraded = reason.clone().or_else(|| {
+                    let unresolved = out.unresolved.values().flatten().any(|f| *f == rel);
+                    unresolved.then(|| unresolved_reason(std::slice::from_ref(&rel)))
+                });
             }
             deltas.push(facts);
         }
@@ -334,6 +344,15 @@ impl Analyzer {
         }
         Ok(key)
     }
+}
+
+/// Why a crate's facts are partly guessed while rust-analyzer is loaded: it has no module for
+/// these files, typically because their crate was added after it loaded.
+fn unresolved_reason(files: &[String]) -> String {
+    format!(
+        "rust-analyzer has no module for {}: links guessed until the analyzer is opened again",
+        files.join(", ")
+    )
 }
 
 /// Run `f` on a thread with a stack large enough for rust-analyzer's type inference, which

@@ -273,3 +273,55 @@ fn a_removed_file_leaves_rust_analyzers_view_without_degrading() {
     assert!(facts.links.iter().any(|l| l.from.ends_with("one#fn")
         && l.confidence == arch_facts::Confidence::Resolved));
 }
+
+#[test]
+fn at_resolved_depth_a_file_created_after_load_is_resolved_like_the_others() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (repo, _) = repo_with_worktree(tmp.path());
+    let options = Options {
+        depth: Depth::Resolved,
+        commits: Commits::None,
+        target_dir: Some(tmp.path().join("target")),
+        ..Options::default()
+    };
+    let mut analyzer = Analyzer::open(&repo, options).unwrap();
+    let mut store = Store::in_memory().unwrap();
+    analyzer.index(&mut store).unwrap();
+    let watcher = watch(std::slice::from_ref(&repo));
+
+    write(&repo, "src/b.rs", "pub fn three() { crate::one() }\n");
+    write(
+        &repo,
+        "src/lib.rs",
+        "pub mod a;\npub mod b;\npub fn one() { b::three() }\n",
+    );
+    let batch = watcher.recv_timeout(DELIVERY).expect("one batch");
+    assert_eq!(paths(&batch), ["src/b.rs", "src/lib.rs"]);
+    let events = analyzer.apply(&batch, &mut store).unwrap();
+    let Some(Event::FactsUpdated { tree, .. }) = events.last() else {
+        panic!("{events:?}");
+    };
+    let facts = store.facts(tree).unwrap().unwrap();
+    let call = |from: &str, to: &str| {
+        facts
+            .links
+            .iter()
+            .find(|l| l.from == from && l.to == arch_facts::Target::Item(to.into()))
+            .map(|l| l.confidence)
+    };
+    let resolved = Some(arch_facts::Confidence::Resolved);
+    assert_eq!(
+        (
+            call("demo::b::three#fn", "demo::one#fn"),
+            call("demo::one#fn", "demo::b::three#fn")
+        ),
+        (resolved, resolved),
+        "{:#?}",
+        facts.links
+    );
+    assert!(
+        facts.analyzer.degraded.is_empty(),
+        "{:?}",
+        facts.analyzer.degraded
+    );
+}

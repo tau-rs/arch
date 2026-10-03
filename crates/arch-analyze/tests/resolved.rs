@@ -295,3 +295,152 @@ fn a_changed_file_is_recomputed_without_loading_again() {
         "recompute took {took:?}; the budget itself is checked by the benchmark"
     );
 }
+
+/// A crate whose `src/lib.rs` defines `one`, opened at resolved depth and indexed once.
+fn opened_lib(root: &Path) -> (Analyzer, Store) {
+    write(
+        root,
+        &[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            ),
+            ("src/lib.rs", "pub fn one() {}\n"),
+        ],
+    );
+    let mut analyzer = Analyzer::open(
+        root,
+        Options {
+            repo_name: Some("demo".into()),
+            commit: None,
+            target_dir: Some(root.join("target")),
+            ..options()
+        },
+    )
+    .unwrap();
+    assert_eq!(analyzer.degraded(), None);
+    let mut store = Store::in_memory().unwrap();
+    analyzer.index(&mut store).unwrap();
+    (analyzer, store)
+}
+
+/// After `changed` are told to the analyzer and it re-indexes: the calls both ways between
+/// `one` and `two` (at `module`) are resolved, and nothing is degraded.
+fn assert_new_module_resolved(analyzer: &mut Analyzer, store: &mut Store, module: &str) {
+    let key = analyzer.index(store).unwrap();
+    let facts = store.facts(&key).unwrap().unwrap();
+    let call = |from: &str, to: &str| {
+        facts
+            .links
+            .iter()
+            .find(|l| l.from == from && l.kind == LinkKind::Calls && l.to == item(to))
+            .map(|l| l.confidence)
+    };
+    let two = format!("demo::{module}::two#fn");
+    assert_eq!(
+        (call(&two, "demo::one#fn"), call("demo::one#fn", &two)),
+        (Some(Confidence::Resolved), Some(Confidence::Resolved)),
+        "{:#?}",
+        facts.links
+    );
+    assert_eq!(analyzer.degraded(), None);
+    assert!(
+        facts.analyzer.degraded.is_empty(),
+        "{:?}",
+        facts.analyzer.degraded
+    );
+}
+
+#[test]
+fn a_file_created_after_load_is_resolved_like_the_others() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut analyzer, mut store) = opened_lib(tmp.path());
+
+    write(
+        tmp.path(),
+        &[
+            ("src/b.rs", "pub fn two() { crate::one() }\n"),
+            ("src/lib.rs", "pub mod b;\npub fn one() { b::two() }\n"),
+        ],
+    );
+    analyzer.file_changed(Path::new("src/b.rs")).unwrap();
+    analyzer.file_changed(Path::new("src/lib.rs")).unwrap();
+    assert_new_module_resolved(&mut analyzer, &mut store, "b");
+}
+
+#[test]
+fn a_file_created_in_a_new_directory_after_load_is_resolved_like_the_others() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut analyzer, mut store) = opened_lib(tmp.path());
+
+    write(
+        tmp.path(),
+        &[
+            ("src/x/mod.rs", "pub fn two() { crate::one() }\n"),
+            ("src/lib.rs", "pub mod x;\npub fn one() { x::two() }\n"),
+        ],
+    );
+    analyzer.file_changed(Path::new("src/lib.rs")).unwrap();
+    analyzer.file_changed(Path::new("src/x/mod.rs")).unwrap();
+    assert_new_module_resolved(&mut analyzer, &mut store, "x");
+}
+
+#[test]
+fn a_file_rust_analyzer_cannot_take_keeps_guessed_links_and_degrades_its_crate() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut analyzer, mut store) = opened_lib(tmp.path());
+
+    // A new member is a new crate: rust-analyzer only sees it after loading again.
+    write(
+        tmp.path(),
+        &[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\nmembers = [\"sub\"]\n\n[dependencies]\nsub = { path = \"sub\" }\n",
+            ),
+            (
+                "sub/Cargo.toml",
+                "[package]\nname = \"sub\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "sub/src/lib.rs",
+                "pub fn three() { four() }\nfn four() {}\n",
+            ),
+            ("src/lib.rs", "pub fn one() { sub::three() }\n"),
+        ],
+    );
+    for f in [
+        "Cargo.toml",
+        "sub/Cargo.toml",
+        "sub/src/lib.rs",
+        "src/lib.rs",
+    ] {
+        analyzer.file_changed(Path::new(f)).unwrap();
+    }
+    let key = analyzer.index(&mut store).unwrap();
+    let facts = store.facts(&key).unwrap().unwrap();
+    let link = facts
+        .links
+        .iter()
+        .find(|l| l.from == "sub::three#fn" && l.to == item("sub::four#fn"));
+    assert_eq!(
+        link.map(|l| l.confidence),
+        Some(Confidence::Guessed),
+        "{:#?} {:#?}",
+        facts.items.iter().map(|i| &i.id).collect::<Vec<_>>(),
+        facts.crates
+    );
+    let reasons: Vec<(&str, &str)> = facts
+        .analyzer
+        .degraded
+        .iter()
+        .map(|d| (d.crate_name.as_str(), d.reason.as_str()))
+        .collect();
+    assert_eq!(
+        reasons,
+        [(
+            "sub",
+            "rust-analyzer has no module for sub/src/lib.rs: links guessed until the analyzer is opened again"
+        )]
+    );
+}

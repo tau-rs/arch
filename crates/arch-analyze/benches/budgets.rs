@@ -39,6 +39,47 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
+/// Write `files`, wait for the watcher's batch and apply it; the time from the first write to the
+/// new facts, once the function `seen` and its resolved links are in them.
+fn save_and_apply(
+    repo: &Path,
+    watcher: &Watcher,
+    analyzer: &mut Analyzer,
+    store: &mut Store,
+    files: &[(&Path, String)],
+    seen: &str,
+) -> Result<Duration, String> {
+    let started = Instant::now();
+    for (file, text) in files {
+        std::fs::write(repo.join(file), text).unwrap();
+    }
+    let batch = watcher
+        .recv_timeout(Duration::from_secs(10))
+        .ok_or("the watcher reported no batch for the save")?;
+    let events = analyzer.apply(&batch, store).unwrap();
+    let took = started.elapsed();
+    let Some(arch_facts::Event::FactsUpdated { tree: key, .. }) = events.last() else {
+        return Err(format!("the batch gave no FactsUpdated: {events:?}"));
+    };
+    if let Some((file, _)) = files
+        .iter()
+        .find(|(f, _)| !batch.changes.iter().any(|c| c.path == *f))
+    {
+        return Err(format!("the batch misses {}: {batch:?}", file.display()));
+    }
+    let facts = store.facts(key).unwrap().unwrap();
+    let suffix = format!("{seen}#fn");
+    let ok = facts.items.iter().any(|i| i.name == seen)
+        && facts
+            .links
+            .iter()
+            .any(|l| l.from.ends_with(&suffix) && l.confidence == Confidence::Resolved);
+    if !ok {
+        return Err(format!("{seen} and its resolved links are missing"));
+    }
+    Ok(took)
+}
+
 fn main() -> ExitCode {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let fixture = manifest.join("../../fixtures/arch-fixtures/repos/smallsvc");
@@ -97,37 +138,45 @@ fn main() -> ExitCode {
     // Watch before the save, outside the timing, and let the backend settle.
     let watcher = Watcher::new(std::slice::from_ref(&repo), Debounce::default()).unwrap();
     while watcher.recv_timeout(Duration::from_millis(300)).is_some() {}
-    let file = Path::new("src/app/pay.rs");
-    let mut text = std::fs::read_to_string(repo.join(file)).unwrap();
+    let pay = Path::new("src/app/pay.rs");
+    let mut text = std::fs::read_to_string(repo.join(pay)).unwrap();
     text.push_str("\npub fn added_by_the_benchmark(order: &crate::domain::Order) -> usize { order.lines.len() }\n");
-    let started = Instant::now();
-    std::fs::write(repo.join(file), text).unwrap();
-    let Some(batch) = watcher.recv_timeout(Duration::from_secs(10)) else {
-        eprintln!("the watcher reported no batch for the save");
-        return ExitCode::FAILURE;
+    let recompute = match save_and_apply(
+        &repo,
+        &watcher,
+        &mut analyzer,
+        &mut store,
+        &[(pay, text)],
+        "added_by_the_benchmark",
+    ) {
+        Ok(took) => took,
+        Err(e) => {
+            eprintln!("recompute_one_file: {e}");
+            return ExitCode::FAILURE;
+        }
     };
-    let events = analyzer.apply(&batch, &mut store).unwrap();
-    let recompute = started.elapsed();
-    let Some(arch_facts::Event::FactsUpdated { tree: key, .. }) = events.last() else {
-        eprintln!("the batch gave no FactsUpdated: {events:?}");
-        return ExitCode::FAILURE;
+    // A new module: a file rust-analyzer did not load, and the `mod` line that reaches it.
+    let module = Path::new("src/app/mod.rs");
+    let mut text = std::fs::read_to_string(repo.join(module)).unwrap();
+    text.push_str("\npub mod refund;\n");
+    let refund = "pub fn refund_by_the_benchmark(order: &crate::domain::Order) -> usize { order.lines.len() }\n";
+    let new_file = match save_and_apply(
+        &repo,
+        &watcher,
+        &mut analyzer,
+        &mut store,
+        &[
+            (Path::new("src/app/refund.rs"), refund.into()),
+            (module, text),
+        ],
+        "refund_by_the_benchmark",
+    ) {
+        Ok(took) => took,
+        Err(e) => {
+            eprintln!("recompute_new_file: {e}");
+            return ExitCode::FAILURE;
+        }
     };
-    if !batch.changes.iter().any(|c| c.path == file) {
-        eprintln!("the batch misses the saved file: {batch:?}");
-        return ExitCode::FAILURE;
-    }
-    let facts = store.facts(key).unwrap().unwrap();
-    let seen = facts
-        .items
-        .iter()
-        .any(|i| i.name == "added_by_the_benchmark")
-        && facts.links.iter().any(|l| {
-            l.from.ends_with("added_by_the_benchmark#fn") && l.confidence == Confidence::Resolved
-        });
-    if !seen {
-        eprintln!("the changed file's new function and its resolved links are missing");
-        return ExitCode::FAILURE;
-    }
 
     // The numbers hold on the reference machine (ADR 0026). A slower machine, such as a shared
     // CI runner, states its factor instead of pretending to be it.
@@ -142,6 +191,7 @@ fn main() -> ExitCode {
     for (name, took, budget) in [
         ("first_index_cold", first, FIRST_INDEX_COLD),
         ("recompute_one_file", recompute, RECOMPUTE_ONE_FILE),
+        ("recompute_new_file", new_file, RECOMPUTE_ONE_FILE),
     ] {
         let budget = budget.mul_f64(scale);
         let verdict = if took < budget { "ok" } else { "OVER BUDGET" };
@@ -153,7 +203,7 @@ fn main() -> ExitCode {
         ok &= took < budget;
     }
     println!(
-        "items {}  links {} ({resolved} resolved)",
+        "items {}  links {} ({resolved} resolved, first index)",
         facts.items.len(),
         facts.links.len()
     );
