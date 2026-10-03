@@ -6,3 +6,4 @@ Crate-level design notes. Each links to arch-design ADRs by number (`tau-rs/arch
 - [arch-views](arch-views.md) — placement and dependency-rule findings, what `arch check` reports
 - [arch-cli and arch-api](arch-cli.md) — `arch init` and `arch check`, exit codes, `schemas/check.schema.json`
 - [arch-driver](arch-driver.md) — the `Driver` trait, the claude-code command line, the stream-json parser and its fixtures
+- [arch-session](arch-session.md) — Accept, the state machine, the core shaper, the scheduler, the gate, the judge, fix rounds

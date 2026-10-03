@@ -16,7 +16,9 @@ pub use arch_facts::{Areas, Column, ColumnRule, Confidence, Level, LinkKind, Wit
 pub use arch_views::{Allowed, Finding};
 pub use check::{CHECK_SCHEMA_VERSION, CheckOutput, Summary, check};
 pub use init::{InitOptions, InitOutcome, init};
-pub use tool_layer::{CLAUDE_CO_AUTHOR, HookOutcome, Phase, ToolLayerTarget, hook, mcp};
+pub use tool_layer::{
+    ArchProject, CLAUDE_CO_AUTHOR, HookOutcome, Phase, ToolLayerTarget, hook, mcp,
+};
 
 /// Errors crossing the API boundary.
 #[derive(Debug, thiserror::Error)]
