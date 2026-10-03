@@ -5,13 +5,16 @@
 //! Milestone 3 of `arch-design/handoffs/handoff-arch.md`.
 //!
 //! Present today, for `arch check` (milestone 4, issue #5): [`placement`] (which area and side
-//! an item sits in) and [`findings`] (dependency rules evaluated on links).
+//! an item sits in), [`findings`] (dependency rules evaluated on links) and [`propose`] (the
+//! `areas.toml` that `arch init` writes).
 
 pub mod findings;
 pub mod placement;
+pub mod propose;
 
 pub use findings::{Allowed, Finding, Report, check_rules};
 pub use placement::{Placement, Placements};
+pub use propose::propose_areas;
 
 /// Errors crossing this crate's boundary.
 #[derive(Debug, thiserror::Error)]

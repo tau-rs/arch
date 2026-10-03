@@ -34,4 +34,21 @@ flowchart LR
   one, the target or a parent of it.
 - Findings are sorted by site, target, rule; each carries its link's witness and `origin: core`.
 
+## Proposed areas (`propose_areas`)
+
+`propose_areas(facts) → Areas` is the `areas.toml` that `arch init` writes (ADR 0027, 0028, 0029).
+
+| step | rule |
+|---|---|
+| areas | one per top-level module of the root crate, a single file included; the crate root has none |
+| split | a module whose direct children mix driving and driven becomes one area per child |
+| side | first match: holds an entry → driving; touches an I/O external, or implements a unit trait an I/O-touching module implements → driven; else domain. Non-test code only |
+| order | byte-wise rank of the name within its side, from 1 |
+| rule | hexagon when the unit has an entry, layers (order only) otherwise |
+
+On the analyzer's facts for the two fixtures it reproduces 10 of 11 rows of each table in ADR 0029.
+The two misses are open design questions, implemented as the ADR text says: smallsvc `app` computes
+driven because logging counts as I/O (arch-design issue 28); zero2prod `startup` computes domain
+because registering routes is not holding an entry (arch-design issue 30).
+
 Not here yet: lints (names pending, issue #13), layouts, fold, Reach, overlays, impact (issue #4).
