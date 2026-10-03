@@ -1593,14 +1593,14 @@ impl<'a> Unit<'a> {
         let Some(tt) = m.token_tree() else { return };
         let s = m.path().and_then(|p| segs(&p)).unwrap_or_default();
         let last = s.last().map(String::as_str).unwrap_or("");
-        let logs = (s.len() == 1
-            && ["println", "eprintln", "print", "eprint", "dbg"].contains(&last))
-            || (s.len() == 2
-                && ["tracing", "log"].contains(&s[0].as_str())
-                && ["trace", "debug", "info", "warn", "error"].contains(&last));
-        if logs {
+        // Only a direct write to the terminal is the tty external. Logging through a facade
+        // (`tracing`, `log`) is a library call, linked to its crate like any other macro
+        // (arch-design#28).
+        let writes =
+            s.len() == 1 && ["println", "eprintln", "print", "eprint", "dbg"].contains(&last);
+        if writes {
             let w = self.witness(fi, at);
-            let why = format!("`{}!` writes to the process log", s.join("::"));
+            let why = format!("`{}!` writes to the terminal", s.join("::"));
             self.link(
                 owner,
                 Target::External("external:tty:log".into()),
@@ -2201,7 +2201,7 @@ impl<'a> Unit<'a> {
             );
         }
 
-        // Externals: crates touched, the SQL database, HTTP hosts, the process log.
+        // Externals: crates touched, the SQL database, HTTP hosts, the terminal.
         let mut externals: Vec<External> = Vec::new();
         for (pkg, touched) in &self.touched {
             let dep = self.krates.iter().find_map(|k| {

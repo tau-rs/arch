@@ -1,6 +1,6 @@
 //! Crates built in a temp directory: one whose manifest cargo rejects (ADR 0010: the facts are still
 //! produced, guessed, with cargo's reason recorded), a workspace with a tool bin (ADR 0007), and
-//! an actix service with scoped, wrapped routes.
+//! an actix service with scoped, wrapped routes, and a crate that both logs and prints.
 
 use std::path::Path;
 
@@ -189,5 +189,39 @@ fn actix_routes_carry_their_scope_and_wraps() {
         f.entries
             .iter()
             .any(|e| e.item == "svc[bin:svc]::routes::health::health#fn")
+    );
+}
+
+#[test]
+fn logging_through_a_facade_is_a_crate_and_printing_is_the_terminal() {
+    let tmp = tempfile::tempdir().unwrap();
+    write(
+        tmp.path(),
+        &[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"svc\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\ntracing = \"0.1\"\nlog = \"0.4\"\n",
+            ),
+            (
+                "src/main.rs",
+                "fn logs() {\n    tracing::info!(\"placed\");\n    log::warn!(\"late\");\n}\n\
+                 fn prints() {\n    println!(\"hi\");\n}\nfn main() { logs(); prints() }\n",
+            ),
+        ],
+    );
+    let f = analyze(tmp.path(), &opts()).unwrap();
+    let tty: Vec<&str> = f
+        .links
+        .iter()
+        .filter(|l| matches!(&l.to, Target::External(e) if e.starts_with("external:tty:")))
+        .map(|l| l.from.as_str())
+        .collect();
+    assert_eq!(tty, ["svc[bin:svc]::prints#fn"]);
+    assert_eq!(
+        f.externals
+            .iter()
+            .filter(|e| e.kind == PortKind::Tty)
+            .count(),
+        1
     );
 }
