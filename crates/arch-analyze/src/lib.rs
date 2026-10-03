@@ -3,11 +3,12 @@
 //! Depends on [`arch_facts`] only. Produces [`arch_facts::FileFacts`] per file (ADR 0002) for the
 //! one unit of a repository (ADR 0007) and assembles them through the store.
 //!
-//! What exists today is the **syntax-level pass**: cargo says what the unit is, each file's items
-//! are read from its syntax tree, and links are guessed from the names the source spells out.
-//! Every link is `guessed` and every analyzed crate is listed in `Analyzer.degraded`, so findings
-//! on these facts warn and never block (ADR 0009). It is also the fallback for a crate
-//! rust-analyzer cannot load (ADR 0010); the rust-analyzer pass (issue #3) refines it.
+//! Two depths ([`Depth`]). The **syntax-level pass** reads each file's items from its syntax
+//! tree and guesses links from the names the source spells out: every link is `guessed`, every
+//! analyzed crate is listed in `Analyzer.degraded`, and findings on these facts warn and never
+//! block (ADR 0009). The **resolved pass** asks rust-analyzer for the type-checked view and
+//! marks what it confirms `resolved`; when rust-analyzer cannot load the repository the result
+//! is the syntax-level one with the reason recorded (ADR 0010).
 //!
 //! ```no_run
 //! let facts = arch_analyze::analyze(std::path::Path::new("."), &arch_analyze::Options::default())?;
@@ -18,14 +19,15 @@
 use std::path::{Path, PathBuf};
 
 use arch_facts::{
-    Analyzer, ArchDir, ContentHash, Degraded, Facts, FileFacts, Repo, Store, TreeHead, TreeKey,
-    Unit,
+    Analyzer as Analyzer_, ArchDir, ContentHash, Degraded, Facts, FileFacts, Repo, Store, TreeHead,
+    TreeKey, Unit,
 };
 
 pub mod cargo;
 pub mod git;
 pub mod items;
 pub mod pass;
+pub mod ra;
 pub mod sql;
 
 /// The reason recorded on every crate and file the syntax-level pass produced.
@@ -64,6 +66,10 @@ pub enum Depth {
     /// Syntax only: fast, needs no build, every link `guessed`.
     #[default]
     Syntax,
+    /// Type-checked through rust-analyzer: links are `resolved`, pattern links stay `guessed`.
+    /// When rust-analyzer cannot load the repository the result is the syntax-level one, with
+    /// the reason recorded (ADR 0010).
+    Resolved,
 }
 
 /// Which commits become facts.
@@ -91,6 +97,9 @@ pub struct Options {
     pub commit: Option<String>,
     /// Which commits to read.
     pub commits: Commits,
+    /// Where cargo's build artifacts for the repository are, when not in its own `target/`
+    /// (rust-analyzer reads build-script outputs and proc-macro libraries from there).
+    pub target_dir: Option<PathBuf>,
 }
 
 /// Analyze the repository at `repo` and return its facts.
@@ -100,128 +109,208 @@ pub fn analyze(repo: &Path, options: &Options) -> Result<Facts, Error> {
     Ok(store.facts(&key)?.expect("the tree was just recorded"))
 }
 
-/// Analyze the repository at `repo` into `store` and return the key its facts are under:
-/// `put_tree → put_file_facts → facts(key)`.
-///
-/// The syntax-level pass recomputes every file of the unit on each call and overwrites their
-/// deltas, because a file's links depend on other files (arch-design issue 21).
+/// Analyze the repository at `repo` into `store` and return the key its facts are under.
 pub fn index(repo: &Path, options: &Options, store: &mut Store) -> Result<TreeKey, Error> {
-    let unit_err = |reason: String| Error::Unit {
-        path: repo.to_path_buf(),
-        reason,
-    };
-    let root = repo.canonicalize().map_err(|source| Error::Io {
-        path: repo.to_path_buf(),
-        source,
-    })?;
-    let in_git = git::is_repo(&root);
+    Analyzer::open(repo, options.clone())?.index(store)
+}
 
-    let files = if in_git {
-        git::files(&root).map_err(|e| Error::Git(format!("{e:#}")))?
-    } else {
-        walk_dir(&root)
-    };
-    let mut hashed: Vec<(PathBuf, ContentHash)> = Vec::with_capacity(files.len());
-    for f in &files {
-        let bytes = std::fs::read(root.join(f)).map_err(|source| Error::Io {
-            path: root.join(f),
+/// An analyzer kept open on one repository. With [`Depth::Resolved`] it holds rust-analyzer
+/// loaded, so after [`Analyzer::file_changed`] the next [`Analyzer::index`] is incremental
+/// (spec §5: one-file recompute < 500 ms).
+#[derive(Debug)]
+pub struct Analyzer {
+    root: PathBuf,
+    options: Options,
+    session: Option<ra::Session>,
+    load_error: Option<String>,
+}
+
+impl Analyzer {
+    /// Open the repository at `repo`. With [`Depth::Resolved`] this loads rust-analyzer, which
+    /// is where the first-index time goes; a load failure is kept as the degrade reason.
+    pub fn open(repo: &Path, options: Options) -> Result<Self, Error> {
+        let root = repo.canonicalize().map_err(|source| Error::Io {
+            path: repo.to_path_buf(),
             source,
         })?;
-        hashed.push((f.clone(), ContentHash::of_bytes(&bytes)));
-    }
-
-    let clean = in_git && !git::is_dirty(&root).unwrap_or(true);
-    let head = if in_git {
-        git::rev_parse(&root, "HEAD").ok()
-    } else {
-        None
-    };
-    let key = match (&options.commit, &head) {
-        (Some(c), _) => TreeKey::commit(c.clone()),
-        (None, Some(h)) if clean => TreeKey::commit(h.clone()),
-        _ => TreeKey::Worktree(ContentHash::of_worktree_state(
-            hashed.iter().map(|(p, h)| (p.as_path(), h)),
-        )),
-    };
-    let commit = match &key {
-        TreeKey::Commit(h) => h.clone(),
-        TreeKey::Worktree(h) => format!("wt:{h}"),
-    };
-
-    let arch = ArchDir::of_repo(&root);
-    let main_bin = if arch.exists() {
-        arch.read_areas().ok().and_then(|a| a.main_bin)
-    } else {
-        None
-    };
-    let plan = cargo::read(&root, main_bin.as_deref()).map_err(|e| unit_err(format!("{e:#}")))?;
-
-    let name = options
-        .repo_name
-        .clone()
-        .or_else(|| root.file_name().map(|n| n.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| "repo".into());
-    let scope = format!("unit:{name}");
-    let out = pass::run(&root, &plan, &scope, &files).map_err(|e| unit_err(format!("{e:#}")))?;
-
-    let reason = match &plan.cargo_error {
-        Some(e) => format!("{SYNTAX_REASON}; {e}"),
-        None => SYNTAX_REASON.to_string(),
-    };
-    let crates = plan.crates();
-    let degraded = crates
-        .iter()
-        .filter(|c| c.status == arch_facts::CrateStatus::Analyzed)
-        .map(|c| Degraded {
-            crate_name: c.name.clone(),
-            reason: reason.clone(),
+        let (session, load_error) = match options.depth {
+            Depth::Syntax => (None, None),
+            Depth::Resolved => {
+                match big_stack(|| ra::Session::load(&root, options.target_dir.as_deref())) {
+                    Ok(s) => (Some(s), None),
+                    Err(e) => (None, Some(format!("{e:#}"))),
+                }
+            }
+        };
+        Ok(Analyzer {
+            root,
+            options,
+            session,
+            load_error,
         })
-        .collect();
-    let tree_head = TreeHead {
-        repo: Repo {
-            name,
-            commit,
-            unit: Unit {
-                id: scope,
-                main_target: plan.main_target.clone(),
-            },
-        },
-        analyzer: Analyzer {
-            name: "arch-analyze".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            degraded,
-        },
-        crates,
-    };
-
-    let commits = match (&options.commits, in_git) {
-        (Commits::None, _) | (_, false) => Vec::new(),
-        (Commits::Range(r), true) => {
-            git::commits(&root, r).map_err(|e| Error::Git(format!("{e:#}")))?
-        }
-        (Commits::Branch, true) => branch_commits(&root),
-    };
-    let hashes: Vec<String> = commits.iter().map(|c| c.hash.clone()).collect();
-    store.put_commits(&commits)?;
-    store.put_tree(&key, head.as_deref(), &hashed, &tree_head, &hashes)?;
-
-    for (path, hash) in &hashed {
-        let rel = path.to_string_lossy().replace('\\', "/");
-        let mut facts = FileFacts::empty(path.clone(), hash.clone());
-        if let Some(parts) = out.files.get(&rel) {
-            facts.items = parts.items.clone();
-            facts.links = parts.links.clone();
-            facts.ports = parts.ports.clone();
-            facts.externals = parts.externals.clone();
-            facts.entries = parts.entries.clone();
-            facts.tables = parts.tables.clone();
-        }
-        if out.rust_files.contains(&rel) {
-            facts.degraded = Some(reason.clone());
-        }
-        store.put_file_facts(&facts)?;
     }
-    Ok(key)
+
+    /// Why the facts are syntax-level only, when they are.
+    pub fn degraded(&self) -> Option<String> {
+        match (&self.session, &self.load_error) {
+            (Some(_), _) => None,
+            (None, Some(e)) => Some(format!("rust-analyzer could not load the repository: {e}")),
+            (None, None) => Some(SYNTAX_REASON.to_string()),
+        }
+    }
+
+    /// Tell the analyzer a file changed on disk (repository-relative path).
+    pub fn file_changed(&mut self, rel: &Path) -> Result<(), Error> {
+        let path = self.root.join(rel);
+        let text = std::fs::read_to_string(&path).map_err(|source| Error::Io { path, source })?;
+        if let Some(s) = &mut self.session {
+            s.file_changed(&rel.to_string_lossy().replace('\\', "/"), text);
+        }
+        Ok(())
+    }
+
+    /// Analyze into `store`: `put_tree → put_file_facts → facts(key)`. Returns the key.
+    ///
+    /// Every file of the unit is written on each call and its delta overwritten, because a
+    /// file's links depend on other files (arch-design issue 21).
+    pub fn index(&mut self, store: &mut Store) -> Result<TreeKey, Error> {
+        let root = self.root.clone();
+        let options = &self.options;
+        let unit_err = |reason: String| Error::Unit {
+            path: root.clone(),
+            reason,
+        };
+        let in_git = git::is_repo(&root);
+
+        let files = if in_git {
+            git::files(&root).map_err(|e| Error::Git(format!("{e:#}")))?
+        } else {
+            walk_dir(&root)
+        };
+        let mut hashed: Vec<(PathBuf, ContentHash)> = Vec::with_capacity(files.len());
+        for f in &files {
+            let bytes = std::fs::read(root.join(f)).map_err(|source| Error::Io {
+                path: root.join(f),
+                source,
+            })?;
+            hashed.push((f.clone(), ContentHash::of_bytes(&bytes)));
+        }
+
+        let clean = in_git && !git::is_dirty(&root).unwrap_or(true);
+        let head = if in_git {
+            git::rev_parse(&root, "HEAD").ok()
+        } else {
+            None
+        };
+        let key = match (&options.commit, &head) {
+            (Some(c), _) => TreeKey::commit(c.clone()),
+            (None, Some(h)) if clean => TreeKey::commit(h.clone()),
+            _ => TreeKey::Worktree(ContentHash::of_worktree_state(
+                hashed.iter().map(|(p, h)| (p.as_path(), h)),
+            )),
+        };
+        let commit = match &key {
+            TreeKey::Commit(h) => h.clone(),
+            TreeKey::Worktree(h) => format!("wt:{h}"),
+        };
+
+        let arch = ArchDir::of_repo(&root);
+        let main_bin = if arch.exists() {
+            arch.read_areas().ok().and_then(|a| a.main_bin)
+        } else {
+            None
+        };
+        let plan =
+            cargo::read(&root, main_bin.as_deref()).map_err(|e| unit_err(format!("{e:#}")))?;
+
+        let name = options
+            .repo_name
+            .clone()
+            .or_else(|| root.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "repo".into());
+        let scope = format!("unit:{name}");
+        // The database may move to another thread but not be shared with one: lend it mutably.
+        let session = self.session.as_mut();
+        let (r, p, sc, fs) = (&root, &plan, &scope, &files);
+        let out = big_stack(move || pass::run(r, p, sc, fs, session.as_deref()))
+            .map_err(|e| unit_err(format!("{e:#}")))?;
+
+        let reason = self.degraded().map(|r| match &plan.cargo_error {
+            Some(e) => format!("{r}; {e}"),
+            None => r,
+        });
+        let crates = plan.crates();
+        let degraded = match &reason {
+            Some(reason) => crates
+                .iter()
+                .filter(|c| c.status == arch_facts::CrateStatus::Analyzed)
+                .map(|c| Degraded {
+                    crate_name: c.name.clone(),
+                    reason: reason.clone(),
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        let version = format!("{}+ra_ap_{}", env!("CARGO_PKG_VERSION"), ra::RA_VERSION);
+        let tree_head = TreeHead {
+            repo: Repo {
+                name,
+                commit,
+                unit: Unit {
+                    id: scope,
+                    main_target: plan.main_target.clone(),
+                },
+            },
+            analyzer: Analyzer_ {
+                name: "arch-analyze".into(),
+                version,
+                degraded,
+            },
+            crates,
+        };
+
+        let commits = match (&options.commits, in_git) {
+            (Commits::None, _) | (_, false) => Vec::new(),
+            (Commits::Range(r), true) => {
+                git::commits(&root, r).map_err(|e| Error::Git(format!("{e:#}")))?
+            }
+            (Commits::Branch, true) => branch_commits(&root),
+        };
+        let hashes: Vec<String> = commits.iter().map(|c| c.hash.clone()).collect();
+        store.put_commits(&commits)?;
+        store.put_tree(&key, head.as_deref(), &hashed, &tree_head, &hashes)?;
+
+        for (path, hash) in &hashed {
+            let rel = path.to_string_lossy().replace('\\', "/");
+            let mut facts = FileFacts::empty(path.clone(), hash.clone());
+            if let Some(parts) = out.files.get(&rel) {
+                facts.items = parts.items.clone();
+                facts.links = parts.links.clone();
+                facts.ports = parts.ports.clone();
+                facts.externals = parts.externals.clone();
+                facts.entries = parts.entries.clone();
+                facts.tables = parts.tables.clone();
+            }
+            if out.rust_files.contains(&rel) {
+                facts.degraded = reason.clone();
+            }
+            store.put_file_facts(&facts)?;
+        }
+        Ok(key)
+    }
+}
+
+/// Run `f` on a thread with a stack large enough for rust-analyzer's type inference, which
+/// recurses deeply; a caller's thread (a test's, a tokio worker's) is often too small.
+fn big_stack<R: Send>(f: impl FnOnce() -> R + Send) -> R {
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn_scoped(scope, f)
+            .expect("spawning the analysis thread")
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
 }
 
 /// Commits since the branch left the default branch; empty on the default branch.

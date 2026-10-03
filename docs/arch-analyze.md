@@ -7,10 +7,10 @@ Reads a repository and writes down what is in it, one unit per repository (ADR 0
 
 Think of a surveyor. Cargo tells it which building on the plot is the one to survey (the unit).
 It then walks each room (source file) and notes what is there (items) and which doors lead where
-(links). Today it surveys from the floor plan alone: it reads the source text and does not
+(links). By default it surveys from the floor plan alone: it reads the source text and does not
 type-check it. That is fast and needs no build, but a door it cannot follow on paper is left
-out, and every door it does note is marked `guessed`. A second surveyor that walks the building
-(rust-analyzer, issue #3) will confirm and complete the notes.
+out, and every door it does note is marked `guessed`. A second surveyor walks the building:
+rust-analyzer type-checks the code, and the doors it confirms are marked `resolved`.
 
 ```mermaid
 flowchart LR
@@ -33,8 +33,45 @@ let key = arch_analyze::index(repo, &options, &mut store)?;
 ```
 
 ```
-cargo run -p arch-analyze --example emit-facts -- <repo> [--name <n>] [--commit <hash>] [--no-commits]
+cargo run -p arch-analyze --example emit-facts -- <repo> [--name <n>] [--commit <hash>] [--no-commits] [--resolved]
 ```
+
+## Two depths
+
+| | `Depth::Syntax` (default) | `Depth::Resolved` |
+|---|---|---|
+| needs | the source files | a cargo project that resolves, `rust-src`, a built `target/` for speed |
+| links | all `guessed`, each with its reason | from rust-analyzer's type-checked view: `resolved`, no reason |
+| pattern links (routes, hand-offs, SQL, wiring, HTTP hosts, derives and attribute macros) | `guessed` | still `guessed`: a pattern is not a type-checked fact |
+| `analyzer.degraded` | every analyzed crate, `syntax-level pass: not type-checked` | empty; or every analyzed crate with `rust-analyzer could not load the repository: <why>` |
+| smallsvc | 0.3 s, 928 links | 3.7 s first index, 0.35 s after one file changes, 983 links (888 resolved) |
+
+`Depth::Resolved` loads rust-analyzer (the `ra_ap_*` crates, pinned to one exact version) once
+and keeps it: `Analyzer::open`, then `index`, then `file_changed` + `index` for each change.
+
+```mermaid
+flowchart LR
+  O["Analyzer::open"] -- "rust-analyzer loads" --> R{loaded?}
+  R -- yes --> T["every name in the unit's files<br/>→ its definition → an item or an external"]
+  R -- "no: cargo fails, no rust-src,<br/>proc-macro server down" --> S["syntax-level facts<br/>reason recorded (ADR 0010)"]
+  T --> L["links: resolved"]
+  P["patterns from syntax"] --> G["links: guessed"]
+```
+
+How a name becomes a link at this depth: each identifier in a file of the unit is classified by
+rust-analyzer (inside macro calls and attribute-macro input, through its expansion); the
+definition is mapped back to the walker's item by the position of its name, or to the external
+crate that owns it (a crate reached only through another one is named from `Cargo.lock`); the
+same name-in-context table as the syntax pass picks the link kind. Definitions a macro generated
+and anything in std are not targets.
+
+One honest consequence: degrade is all-or-nothing for the unit today, not per crate. A unit is
+one package and the workspace libs it reaches, and rust-analyzer loads them together; per-crate
+degrade needs a per-crate signal that it does not expose through this API.
+
+Budgets (ADR 0026) are benchmarks with thresholds: `cargo bench -p arch-analyze` runs
+`first_index_cold` (< 5 s) and `recompute_one_file` (< 500 ms) on smallsvc and fails when one is
+crossed.
 
 ## What the syntax-level pass produces, and how it guesses
 
@@ -78,5 +115,5 @@ stored with the file their witness names.
 |---|---|---|
 | a file's facts are not a function of that file alone | recompute the unit, overwrite deltas | arch-design#21 |
 | id of an item in a non-lib target | `<crate>[bin:<name>]::…` | arch-design#22 |
-| what "cannot type-check" means | cargo failure is recorded; the trigger list waits for the rust-analyzer pass | arch-design#23 |
+| what "cannot type-check" means | the load fails: cargo cannot describe the workspace, `rust-src` is missing, or the proc-macro server does not start | arch-design#23 |
 | the entry kind for a spawned worker (ADR 0028) | entry emitted with `framework` absent until `Entry` has a kind | arch issue "arch-facts: Entry needs a kind" |
