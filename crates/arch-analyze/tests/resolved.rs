@@ -146,10 +146,32 @@ fn smallsvc_links_are_resolved_and_patterns_stay_guessed() {
         }
     }
     // The spawned worker is still an entry and still not a direct call.
-    assert!(
+    let entry = |id: &str| {
         f.entries
             .iter()
-            .any(|e| e.item == "orderly::worker::run_outbox_worker#fn")
+            .find(|e| e.item == id)
+            .unwrap_or_else(|| panic!("{id}"))
+    };
+    let worker = entry("orderly::worker::run_outbox_worker#fn");
+    // ADR 0028: the spawn is in `main`'s own body, so the entry is resolved.
+    assert_eq!(
+        (worker.kind, worker.confidence),
+        (EntryKind::SpawnedWorker, Confidence::Resolved)
+    );
+    let main = entry("orderly[bin:orderly]::main#fn");
+    assert_eq!(
+        (main.kind, main.confidence),
+        (EntryKind::Main, Confidence::Resolved)
+    );
+    let handler = entry("orderly::adapters::http::handlers::pay_order#fn");
+    assert_eq!(
+        (handler.kind, handler.confidence),
+        (EntryKind::Framework, Confidence::Guessed)
+    );
+    assert_eq!(
+        f.entries.len(),
+        7,
+        "main, five handlers, the worker; tests are not entries"
     );
     assert!(
         find(

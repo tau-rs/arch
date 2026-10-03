@@ -116,4 +116,4 @@ stored with the file their witness names.
 | a file's facts are not a function of that file alone | recompute the unit, overwrite deltas | arch-design#21 |
 | id of an item in a non-lib target | `<crate>[bin:<name>]::…` | arch-design#22 |
 | what "cannot type-check" means | the load fails: cargo cannot describe the workspace, `rust-src` is missing, or the proc-macro server does not start | arch-design#23 |
-| the entry kind for a spawned worker (ADR 0028) | entry emitted with `framework` absent until `Entry` has a kind | arch issue "arch-facts: Entry needs a kind" |
+| entries (ADR 0028) | `main`, framework-held handlers, spawned workers; a test is not an entry (its `tests` links carry what it exercises). `main` and a worker spawned in `main`'s body are `resolved` at resolved depth; routes are patterns and stay `guessed` | decided: ADR 0028 |

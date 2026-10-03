@@ -211,6 +211,15 @@ fn the_spawned_outbox_worker_is_an_entry() {
         .expect("ADR 0028: spawned worker entry");
     assert!(matches!(&entry.witness, Witness::Span { file, .. } if file == "src/main.rs"));
     assert!(f.items.iter().any(|i| i.id == worker && i.flags.entry));
+    // At syntax depth nothing is resolved, the entry included.
+    assert_eq!(
+        (entry.kind, entry.confidence),
+        (EntryKind::SpawnedWorker, Confidence::Guessed)
+    );
+    assert!(
+        f.entries.iter().all(|e| !e.item.contains("::tests::")),
+        "a test is not an entry"
+    );
     // The loop's body is inside `tokio::select!`; the call it makes is still seen.
     assert!(has_link(
         &f,

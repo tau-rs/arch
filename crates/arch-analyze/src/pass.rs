@@ -198,6 +198,8 @@ struct Unit<'a> {
     tty: Option<Witness>,
     /// `Cargo.lock` packages by the name code spells (`sqlx_core`): package name and line.
     lock: HashMap<String, (String, u32)>,
+    /// The type-checked view was available: entries it confirms are `resolved`.
+    type_checked: bool,
     /// Set while links come from the type-checked view: they are `resolved` and need no reason.
     resolved: bool,
 }
@@ -318,6 +320,7 @@ impl<'a> Unit<'a> {
             http: BTreeMap::new(),
             tty: None,
             resolved: false,
+            type_checked: false,
             lock: lock_packages(root),
         };
         for ut in &plan.unit {
@@ -1961,7 +1964,7 @@ impl<'a> Unit<'a> {
     }
 
     /// ADR 0028: the functions a start-up spawn runs forever are entries.
-    fn spawned_workers(&self, entries: &BTreeSet<usize>) -> Vec<(usize, Witness)> {
+    fn spawned_workers(&self, entries: &BTreeSet<usize>) -> Vec<(usize, Witness, bool)> {
         let mut calls: HashMap<usize, Vec<usize>> = HashMap::new();
         for l in self.links.values() {
             if l.kind == LinkKind::Calls
@@ -2000,7 +2003,7 @@ impl<'a> Unit<'a> {
             .filter(|e| !self.items[*e].f.is_test)
             .collect();
         let from_entries = reach(&non_test, None);
-        let mut out: Vec<(usize, Witness)> = Vec::new();
+        let mut out: Vec<(usize, Witness, bool)> = Vec::new();
         for s in &self.spawns {
             let test_code = |i: usize| {
                 self.items[i].f.is_test
@@ -2034,8 +2037,8 @@ impl<'a> Unit<'a> {
             let loops = reach(&[s.target], Some(&top))
                 .into_iter()
                 .any(|f| items::has_unbounded_loop(&self.items[f].f.node));
-            if loops && !out.iter().any(|(t, _)| *t == s.target) {
-                out.push((s.target, s.witness.clone()));
+            if loops && !out.iter().any(|(t, _, _)| *t == s.target) {
+                out.push((s.target, s.witness.clone(), mains.contains(&s.owner)));
             }
         }
         out
@@ -2060,6 +2063,13 @@ impl<'a> Unit<'a> {
             .replace('\\', "/");
 
         // Entries: main, tests, routed handlers, spawned workers.
+        // What cargo and the type-checked view establish is resolved; at syntax depth every
+        // fact is a guess (ADR 0010). A route is a pattern at either depth.
+        let sure = if self.type_checked {
+            Confidence::Resolved
+        } else {
+            Confidence::Guessed
+        };
         let mut entries: BTreeMap<usize, Entry> = BTreeMap::new();
         for (i, it) in self.items.iter().enumerate() {
             if it.f.item.flags.entry {
@@ -2075,7 +2085,7 @@ impl<'a> Unit<'a> {
                         item: it.f.item.id.clone(),
                         kind: EntryKind::Main,
                         framework: None,
-                        confidence: Confidence::Guessed,
+                        confidence: sure,
                         witness,
                     },
                 );
@@ -2103,12 +2113,14 @@ impl<'a> Unit<'a> {
             let _ = r.owner;
         }
         let known: BTreeSet<usize> = entries.keys().copied().collect();
-        for (worker, witness) in self.spawned_workers(&known) {
+        for (worker, witness, in_main) in self.spawned_workers(&known) {
             entries.entry(worker).or_insert(Entry {
                 item: self.id(worker).to_string(),
                 kind: EntryKind::SpawnedWorker,
                 framework: None,
-                confidence: Confidence::Guessed,
+                // ADR 0028: resolved when the spawn is in `main`'s own body, guessed when it is
+                // only reached from `main`.
+                confidence: if in_main { sure } else { Confidence::Guessed },
                 witness,
             });
         }
@@ -2481,6 +2493,7 @@ pub fn run(
     }
     if let Some(session) = session {
         unit.resolve_links(session);
+        unit.type_checked = true;
     }
     Ok(unit.finish(root, tree_files))
 }
