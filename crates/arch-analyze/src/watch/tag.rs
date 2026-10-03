@@ -4,72 +4,31 @@
 //! hand). The recorded content, not the path alone, decides: your edit right after an agent's
 //! write to the same file is still yours.
 //!
-//! Provisional reading of tau-rs/arch-design#34, until arch-driver (tau-rs/arch#46) owns the
-//! format: every `<worktree>/.arch/cache/tool-layer/*.json` is
-//!
-//! ```json
-//! { "session": "s-…", "element": "e-…", "expected": [ { "path": "src/pay.rs", "sha256": "…" } ] }
-//! ```
+//! The format is ADR 0012's (tau-rs/arch-design#34), owned by `arch-facts`
+//! ([`arch_facts::ToolLayerState`]): every `<worktree>/.arch/cache/tool-layer/*.json` lists the
+//! writes its element's tool layer let through as `expected` (path, sha256).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use arch_facts::{Attribution, ContentHash, ElementId, SessionId};
-use serde::Deserialize;
-
-/// Where the tool layer keeps its state, relative to a worktree.
-const TOOL_LAYER: &str = ".arch/cache/tool-layer";
-
-#[derive(Deserialize)]
-struct Registry {
-    session: SessionId,
-    #[serde(default)]
-    element: Option<ElementId>,
-    #[serde(default)]
-    expected: Vec<Expected>,
-}
-
-#[derive(Deserialize)]
-struct Expected {
-    path: PathBuf,
-    sha256: String,
-}
+use arch_facts::{Attribution, ContentHash, tool_layer_states};
 
 /// Who wrote `rel` (relative to `worktree`) with content `hash`: the session whose tool layer
-/// expects exactly that content, or `you`. A registry file that cannot be read claims nothing.
+/// expects exactly that content, or `you`. A state file that cannot be read claims nothing.
 pub fn attribute(worktree: &Path, rel: &Path, hash: &ContentHash) -> Attribution {
-    let Ok(entries) = std::fs::read_dir(worktree.join(TOOL_LAYER)) else {
-        return Attribution::You;
-    };
-    let mut files: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
-        .collect();
-    files.sort();
-    for file in files {
-        let Some(registry) = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Registry>(&text).ok())
-        else {
-            continue;
-        };
-        if registry
-            .expected
-            .iter()
-            .any(|e| e.path == rel && e.sha256 == hash.0)
-        {
-            return Attribution::Session {
-                session: registry.session,
-                element: registry.element,
-            };
-        }
-    }
-    Attribution::You
+    tool_layer_states(worktree)
+        .into_iter()
+        .find(|state| state.matches(rel, hash))
+        .map_or(Attribution::You, |state| Attribution::Session {
+            session: state.session,
+            element: state.element,
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TOOL_LAYER: &str = ".arch/cache/tool-layer";
 
     fn registry(dir: &Path, name: &str, json: &str) {
         let d = dir.join(TOOL_LAYER);

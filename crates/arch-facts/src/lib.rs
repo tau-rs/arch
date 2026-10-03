@@ -23,8 +23,9 @@ pub mod session;
 pub mod store;
 
 pub use arch_dir::{
-    Allow, Allows, ArchDir, Archive, ArchiveFile, AreaOverride, Areas, Column, ColumnRule, Level,
-    LintLevel, LintSetting, NOTES_REF, Rule, Rules, SessionDir,
+    Allow, Allows, ArchDir, Archive, ArchiveFile, AreaOverride, Areas, AttributedWrite, Column,
+    ColumnRule, ExpectedWrite, Level, LintLevel, LintSetting, NOTES_REF, Rule, Rules, SessionDir,
+    ToolLayerFile, ToolLayerState, tool_layer_dir, tool_layer_states,
 };
 pub use error::{Error, Result};
 pub use event::{Attribution, Event, SubsystemState};

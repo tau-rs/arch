@@ -2,19 +2,21 @@
 //! JSON-RPC on a local socket and over MCP, same handlers.
 //!
 //! Depends on every other library crate. Milestone 6 of `handoff-arch.md` brings the two
-//! transports. Present today, for the CLI (milestone 4, issue #5): [`init()`] and [`check()`],
-//! the two methods `arch init` and `arch check` call. The CLI depends on this crate only, so the
-//! types it prints are re-exported here.
+//! transports. Present today, for the CLI: [`init()`] and [`check()`] (milestone 4, issue #5),
+//! and [`hook()`] and [`mcp()`], the tool layer an agent runs under (ADR 0012, issue #46). The
+//! CLI depends on this crate only, so the types it prints are re-exported here.
 
 use std::path::PathBuf;
 
 pub mod check;
 pub mod init;
+pub mod tool_layer;
 
 pub use arch_facts::{Areas, Column, ColumnRule, Confidence, Level, LinkKind, Witness};
 pub use arch_views::{Allowed, Finding};
 pub use check::{CHECK_SCHEMA_VERSION, CheckOutput, Summary, check};
 pub use init::{InitOptions, InitOutcome, init};
+pub use tool_layer::{CLAUDE_CO_AUTHOR, HookOutcome, Phase, ToolLayerTarget, hook, mcp};
 
 /// Errors crossing the API boundary.
 #[derive(Debug, thiserror::Error)]
@@ -47,4 +49,7 @@ pub enum Error {
     /// Git answered with an error.
     #[error("git: {0}")]
     Git(String),
+    /// The tool layer (`arch hook`, `arch mcp`) failed.
+    #[error(transparent)]
+    ToolLayer(#[from] arch_driver::tool_layer::ToolLayerError),
 }

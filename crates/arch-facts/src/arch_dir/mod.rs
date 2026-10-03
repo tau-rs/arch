@@ -8,6 +8,7 @@
 //!   allows           allowed sites, person-only (TOML)
 //!   sessions/<id>/   plan.toml · thread.jsonl · records/  (ADR 0003)
 //!   cache/           the sqlite store, gitignored (ADR 0001)
+//!   cache/tool-layer/<element>.json  the tool layer's state, gitignored (ADR 0012)
 //!   board            V1: empty
 //! ```
 //!
@@ -19,6 +20,7 @@ mod archive;
 mod areas;
 mod rules;
 mod sessions;
+mod tool_layer;
 
 use std::path::{Path, PathBuf};
 
@@ -27,6 +29,10 @@ pub use archive::{Archive, ArchiveFile, NOTES_REF};
 pub use areas::{AreaOverride, Areas, Column, ColumnRule};
 pub use rules::{Level, LintLevel, LintSetting, Rule, Rules};
 pub use sessions::SessionDir;
+pub use tool_layer::{
+    AttributedWrite, ExpectedWrite, ToolLayerFile, ToolLayerState, tool_layer_dir,
+    tool_layer_states,
+};
 
 use crate::error::{Error, Result};
 use crate::session::SessionId;

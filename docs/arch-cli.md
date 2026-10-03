@@ -1,7 +1,8 @@
 # arch-cli and arch-api
 
 `arch` is the one binary. It depends on `arch-api` only; `arch-api` holds the methods and
-re-exports the types the CLI prints. Live today: `init` and `check` (milestone 4, issue #5).
+re-exports the types the CLI prints. Live today: `init` and `check` (milestone 4, issue #5),
+`hook` and `mcp` (the tool layer, issue #46; see `docs/arch-driver.md`).
 
 ## `arch init [path] [--no-commit]`
 
@@ -44,3 +45,18 @@ warn    domain must not depend-on driven
 One honest consequence of syntax-level facts: every link is guessed, so every finding is a warning
 and the exit code is 0 (ADR 0009). A finding can block once the rust-analyzer pass resolves its
 link. The whole tree is checked; scoping to a diff comes later.
+
+## `arch hook pre|post --worktree <w> --session <id> --element <id>`
+
+Claude Code's PreToolUse / PostToolUse / PostToolUseFailure hook (ADR 0012), with the call as JSON
+on stdin. The driver's `--settings` file runs it; nobody types it.
+
+| command | exit 0 | exit 2 | exit 1 |
+|---|---|---|---|
+| `hook pre` | the call goes through | blocked; the reason is on stderr and the model reads it. Also on any failure of arch itself (unknown element, unreadable input): the tool layer fails closed | — |
+| `hook post` | recorded | — | arch failed; nothing is blocked |
+
+## `arch mcp --worktree <w> --session <id> --element <id> [--co-author 'Name <email>']`
+
+The MCP server over stdio, tools `read · check · commit · ask`, for one element. The driver's
+`--mcp-config` file starts it. `--co-author` defaults to `Claude <noreply@anthropic.com>`.

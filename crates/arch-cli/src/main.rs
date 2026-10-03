@@ -1,15 +1,20 @@
 //! `arch` · the binary: `init · serve · check · mcp · hook` (ADR 0023).
 //!
-//! `init` and `check` are live (milestone 4); the other commands report that they are not yet
-//! implemented and exit with status 2. Depends on `arch-api` only.
+//! `init`, `check` (milestone 4), `hook` and `mcp` (the tool layer, #46) are live; `serve`
+//! reports that it is not yet implemented and exits with status 2. Depends on `arch-api` only.
 //!
 //! Exit codes of `arch check`: 0 when nothing blocks (clean, or warnings only), 1 when a finding
-//! blocks, 2 when the tool itself failed.
+//! blocks, 2 when the tool itself failed. `arch hook pre` exits 0 to let a call through and 2 to
+//! block it, with the reason on stderr; it blocks when it fails, too (fail closed). `arch hook
+//! post` blocks nothing: it exits 1 when it fails.
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use arch_api::{CheckOutput, Finding, InitOptions, InitOutcome, Level, Witness};
+use arch_api::{
+    CheckOutput, Finding, InitOptions, InitOutcome, Level, Phase, ToolLayerTarget, Witness,
+};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -41,13 +46,54 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Format::Human)]
         format: Format,
     },
-    /// Serve the MCP tools for one session.
-    Mcp,
-    /// Driver hooks (ADR 0012).
+    /// Serve the MCP tools (read · check · commit · ask) for one element, over stdio.
+    Mcp {
+        #[command(flatten)]
+        target: Target,
+        /// Who the element's commits are co-authored by.
+        #[arg(long, default_value = arch_api::CLAUDE_CO_AUTHOR)]
+        co_author: String,
+    },
+    /// Driver hooks (ADR 0012): the hook JSON on stdin.
     Hook {
         /// `pre` (stale-write guard, element-scope veto) or `post` (attribution).
-        phase: String,
+        #[arg(value_enum)]
+        phase: HookPhase,
+        #[command(flatten)]
+        target: Target,
     },
+}
+
+/// The element of a session the tool layer works on.
+#[derive(clap::Args)]
+struct Target {
+    /// The session's worktree.
+    #[arg(long, default_value = ".")]
+    worktree: PathBuf,
+    /// The session id.
+    #[arg(long)]
+    session: String,
+    /// The element id.
+    #[arg(long)]
+    element: String,
+}
+
+impl Target {
+    fn into_api(self) -> ToolLayerTarget {
+        ToolLayerTarget {
+            worktree: self.worktree,
+            session: self.session,
+            element: self.element,
+        }
+    }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum HookPhase {
+    /// Before a tool call.
+    Pre,
+    /// After a tool call (or its failure).
+    Post,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -78,14 +124,42 @@ fn main() -> ExitCode {
             output.exit_code()
         }),
         Command::Serve => not_yet("serve"),
-        Command::Mcp => not_yet("mcp"),
-        Command::Hook { .. } => not_yet("hook"),
+        Command::Mcp { target, co_author } => arch_api::mcp(
+            &target.into_api(),
+            &co_author,
+            std::io::stdin().lock(),
+            std::io::stdout().lock(),
+        )
+        .map(|()| 0),
+        Command::Hook { phase, target } => return run_hook(phase, target.into_api()),
     };
     match result {
         Ok(code) => ExitCode::from(code),
         Err(e) => {
             eprintln!("arch: {e}");
             ExitCode::from(2)
+        }
+    }
+}
+
+fn run_hook(phase: HookPhase, target: ToolLayerTarget) -> ExitCode {
+    let (phase, failed) = match phase {
+        HookPhase::Pre => (Phase::Pre, 2),
+        HookPhase::Post => (Phase::Post, 1),
+    };
+    let mut stdin = String::new();
+    let outcome = std::io::stdin()
+        .read_to_string(&mut stdin)
+        .map_err(|e| e.to_string())
+        .and_then(|_| arch_api::hook(phase, &target, &stdin).map_err(|e| e.to_string()));
+    match outcome {
+        Ok(outcome) => {
+            eprint!("{}", outcome.stderr);
+            ExitCode::from(outcome.exit_code)
+        }
+        Err(e) => {
+            eprintln!("arch hook: {e}");
+            ExitCode::from(failed)
         }
     }
 }
