@@ -39,4 +39,5 @@ hex = "0.4"
 jiff = { version = "0.2", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
 pretty_assertions = "1"

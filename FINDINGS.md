@@ -8,6 +8,8 @@ that produced it.
 |---|---|---|
 | F-1 / F-2 | https://github.com/tau-rs/arch-design/issues/15 | #2 |
 | F-3 | https://github.com/tau-rs/arch-design/issues/16 | #10 |
+| F-4 | https://github.com/tau-rs/arch-design/issues/33 | #44 |
+| F-5 | https://github.com/tau-rs/arch-design/issues/15 | #44 |
 
 ## F-1 · Hooks passed via `--settings` never fire under `claude -p --bare` (2026-10-02)
 
@@ -80,3 +82,29 @@ two as `routes` and `queues`, which makes 21, in four families chosen by what th
 plus `refers-to` outside the families. The schema is versioned (`schema_version`); renaming or
 regrouping before the first golden facts are pinned costs nothing, after it costs a fixture bump.
 **Needs confirmation** against the arch-design source for the list.
+
+## F-4 · `--no-session-persistence` rules out `--resume` (2026-10-03, decided: drop it)
+
+**Affects:** option A of arch-design#15 (ADR 12 amendment), ADR 3 (thread pointers), ADR 15 (restart),
+spec §6 (Asks, fix rounds).
+
+`claude --help` (2.1.272): sessions run with `--no-session-persistence` "will not be saved to disk and
+cannot be resumed". Answers to an ask, fix rounds and restart all continue a driver session, and
+ADR 3 records the transcript path as a pointer. The user chose option A on arch-design#33: arch passes
+`--session-id <uuid>` it generates and `--resume <uuid>` to continue. Verified by the opt-in smoke
+test (`crates/arch-driver/tests/smoke.rs`): the id is honoured, the transcript exists at
+`~/.claude/projects/<cwd>/<id>.jsonl`, and the resumed turn remembers the first. One honest
+consequence: arch's runs appear in Claude Code's history for each worktree.
+
+## F-5 · `--allowedTools` approves, it does not restrict; `--tools` does (2026-10-03)
+
+**Affects:** the ADR 12 amendment's command line (arch-design#15), the confinement in #46.
+
+With F-1's command line, the `init` line still lists every built-in tool (`Bash`, `Agent`,
+`SendMessage`, `WebFetch`, `Cron*`, `Workflow`, …), and the `subagent` recording shows the agent
+calling `Agent` and `SendMessage` although only `Read Edit Write Glob Grep Task` were in
+`--allowedTools`. Under `--permission-prompts none`, `--allowedTools` decides which calls skip the
+prompt; tools that need no permission run anyway. `--tools Read,Edit,…` (comma-separated) restricts
+the set: the `init` line then lists exactly those (verified by the smoke test). The adapter passes
+both: `--tools` is the confinement, `--allowedTools` the approvals.
+
