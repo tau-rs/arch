@@ -3,13 +3,14 @@
 
 use std::collections::BTreeMap;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
 
 /// A finding's level (spec §6, vocabulary: "blocking or not"; ADR 0009 for the confidence
 /// rule that can lower it).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Level {
     /// Blocks a gate or a merge.

@@ -114,22 +114,29 @@ dependencies = [
 name = "arch-api"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "arch-analyze",
  "arch-driver",
  "arch-facts",
  "arch-forge",
  "arch-session",
  "arch-views",
+ "jsonschema",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
 name = "arch-cli"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "arch-api",
  "clap",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -186,6 +193,7 @@ version = "0.1.0"
 dependencies = [
  "arch-facts",
  "globset",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror",

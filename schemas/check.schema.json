@@ -1,0 +1,440 @@
+{
+  "$defs": {
+    "Allowed": {
+      "description": "The allow that covers a finding.",
+      "properties": {
+        "by": {
+          "description": "Who allowed it.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "Confidence": {
+      "description": "How sure a fact is (ADR 9). A finding on a `guessed` link warns, never blocks; on `declared`\nit cannot gate a merge.",
+      "oneOf": [
+        {
+          "const": "resolved",
+          "description": "From the type-checked view.",
+          "type": "string"
+        },
+        {
+          "const": "guessed",
+          "description": "From a pattern, or from the syntax-only fallback.",
+          "type": "string"
+        },
+        {
+          "const": "declared",
+          "description": "Written by a person in `.arch/` (a rule, an allow, an area).",
+          "type": "string"
+        }
+      ]
+    },
+    "Degraded": {
+      "additionalProperties": false,
+      "description": "One crate rust-analyzer could not type-check; all its facts are `guessed`.",
+      "properties": {
+        "crate": {
+          "description": "Crate name.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why, as the tool reported it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "crate",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "Finding": {
+      "description": "One rule violation on one link.",
+      "properties": {
+        "allowed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Allowed"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set when `.arch/allows` covers the finding."
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence",
+          "description": "The link's confidence."
+        },
+        "from": {
+          "description": "The item the link starts from.",
+          "type": "string"
+        },
+        "from_area": {
+          "description": "The area of `from`.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/LinkKind",
+          "description": "The link's kind."
+        },
+        "level": {
+          "$ref": "#/$defs/Level",
+          "description": "The effective level, after the confidence rule and allows."
+        },
+        "member": {
+          "description": "The variant or field touched, when the link names one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "description": "Who contributed the check; always `core` in V1.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "The rule as `.arch/allows` spells it: `domain must not depend-on driven`.",
+          "type": "string"
+        },
+        "site": {
+          "description": "The site: `<file>::<path of the item in its module>`, as `.arch/allows` keys it.",
+          "type": "string"
+        },
+        "target": {
+          "description": "The far end, in the same form as `site` for an item, or the id of an external, port or table.",
+          "type": "string"
+        },
+        "target_area": {
+          "description": "The area of the target, or `externals`.",
+          "type": "string"
+        },
+        "witness": {
+          "$ref": "#/$defs/Witness",
+          "description": "Where the link is visible."
+        }
+      },
+      "required": [
+        "rule",
+        "origin",
+        "level",
+        "site",
+        "from",
+        "from_area",
+        "target",
+        "target_area",
+        "kind",
+        "confidence",
+        "witness"
+      ],
+      "type": "object"
+    },
+    "Level": {
+      "description": "A finding's level (spec §6, vocabulary: \"blocking or not\"; ADR 0009 for the confidence\nrule that can lower it).",
+      "oneOf": [
+        {
+          "const": "block",
+          "description": "Blocks a gate or a merge.",
+          "type": "string"
+        },
+        {
+          "const": "warn",
+          "description": "Warns.",
+          "type": "string"
+        }
+      ]
+    },
+    "LinkKind": {
+      "description": "Link kinds. Families: call · type · data · structure, plus `refers-to` outside them.\n`resolved` by default from the type-checked view; `hands-off`, `listens-to`, `calls-out` and\n`wires` are pattern guesses (HANDOFF §2).",
+      "oneOf": [
+        {
+          "const": "calls",
+          "description": "Calls a function or method.",
+          "type": "string"
+        },
+        {
+          "const": "calls-port",
+          "description": "Calls through a port (a trait object or generic the unit owns).",
+          "type": "string"
+        },
+        {
+          "const": "depends-on-port",
+          "description": "Takes a port as a dependency (field, parameter) without a call site in this item.",
+          "type": "string"
+        },
+        {
+          "const": "hands-off",
+          "description": "Hands work to another task, thread or channel (spawn, send).",
+          "type": "string"
+        },
+        {
+          "const": "listens-to",
+          "description": "Receives from a channel, topic or signal.",
+          "type": "string"
+        },
+        {
+          "const": "calls-out",
+          "description": "Calls out of the unit to an external.",
+          "type": "string"
+        },
+        {
+          "const": "wires",
+          "description": "Wires an implementation to a port at composition time (main, a builder, a container).",
+          "type": "string"
+        },
+        {
+          "const": "routes",
+          "description": "A registered `route → handler`, with the middleware stack in `reason`-free `witness` lines.",
+          "type": "string"
+        },
+        {
+          "const": "implements",
+          "description": "Implements a trait.",
+          "type": "string"
+        },
+        {
+          "const": "refines",
+          "description": "A trait refines (has as supertrait) another.",
+          "type": "string"
+        },
+        {
+          "const": "inherits",
+          "description": "Inherits in the derive/delegation sense (`#[derive]`, `Deref` delegation).",
+          "type": "string"
+        },
+        {
+          "const": "uses-type",
+          "description": "Uses a type in a signature or a body.",
+          "type": "string"
+        },
+        {
+          "const": "holds",
+          "description": "Holds a value of the type (a field).",
+          "type": "string"
+        },
+        {
+          "const": "constructs",
+          "description": "Constructs the type.",
+          "type": "string"
+        },
+        {
+          "const": "matches-on",
+          "description": "Matches on the type's variants.",
+          "type": "string"
+        },
+        {
+          "const": "reads",
+          "description": "Reads or writes state, a field, a table; the direction is `flags.access`.",
+          "type": "string"
+        },
+        {
+          "const": "queues",
+          "description": "Uses a shared table as a queue; inserter or dequeuer per `flags.access`.",
+          "type": "string"
+        },
+        {
+          "const": "tests",
+          "description": "Tests the target.",
+          "type": "string"
+        },
+        {
+          "const": "re-exports",
+          "description": "Re-exports the target (`pub use`).",
+          "type": "string"
+        },
+        {
+          "const": "expands",
+          "description": "Expands to the target (macro).",
+          "type": "string"
+        },
+        {
+          "const": "decorates",
+          "description": "Decorates the target (attribute macro).",
+          "type": "string"
+        },
+        {
+          "const": "refers-to",
+          "description": "Names the target without a stronger relation known.",
+          "type": "string"
+        }
+      ]
+    },
+    "Summary": {
+      "description": "Finding counts by outcome.",
+      "properties": {
+        "allowed": {
+          "description": "Findings covered by `.arch/allows`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "blocking": {
+          "description": "Findings that fail the check.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "warnings": {
+          "description": "Findings that warn.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "blocking",
+        "warnings",
+        "allowed"
+      ],
+      "type": "object"
+    },
+    "Witness": {
+      "description": "Where a fact can be seen (the witness rule, spec §1).",
+      "oneOf": [
+        {
+          "description": "A location in a source file of the repository.",
+          "properties": {
+            "col": {
+              "description": "1-based column, when known.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "file": {
+              "description": "Repository-relative path.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "span",
+              "type": "string"
+            },
+            "line": {
+              "description": "1-based line.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "file",
+            "line"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A contract or a declaration (`Cargo.toml`, `.arch/rules`, a migration file).",
+          "properties": {
+            "file": {
+              "description": "Repository-relative path.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "declared",
+              "type": "string"
+            },
+            "line": {
+              "description": "1-based line.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "file",
+            "line"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tool's output (`cargo metadata`, a test run), identified by its content hash.",
+          "properties": {
+            "kind": {
+              "const": "tool",
+              "type": "string"
+            },
+            "output_sha256": {
+              "description": "SHA-256 of the output, hex.",
+              "type": "string"
+            },
+            "tool": {
+              "description": "Tool name and arguments as run.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "tool",
+            "output_sha256"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$id": "https://github.com/tau-rs/arch/blob/main/schemas/check.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "What `arch check --format json` prints.",
+  "properties": {
+    "analyzer": {
+      "description": "The analyzer and its version.",
+      "type": "string"
+    },
+    "commit": {
+      "description": "The commit (or `wt:` worktree-state hash) the facts describe.",
+      "type": "string"
+    },
+    "degraded": {
+      "description": "Crates analyzed at syntax level only: their facts are guessed, so findings on them warn\nand never block (ADR 0009, 0010).",
+      "items": {
+        "$ref": "#/$defs/Degraded"
+      },
+      "type": "array"
+    },
+    "findings": {
+      "description": "Every finding, allowed ones included, sorted by site, target and rule.",
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "type": "array"
+    },
+    "repo": {
+      "description": "Repository name.",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "Shape version of this document.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary",
+      "description": "Counts."
+    }
+  },
+  "required": [
+    "schema_version",
+    "repo",
+    "commit",
+    "analyzer",
+    "degraded",
+    "summary",
+    "findings"
+  ],
+  "title": "CheckOutput",
+  "type": "object"
+}
