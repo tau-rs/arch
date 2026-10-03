@@ -206,6 +206,7 @@ fn free_worktree(repo: &Path, parent: Option<&Path>) -> Result<PathBuf, Error> {
         .expect("some n is free"))
 }
 
+/// Run git in `dir`; its stdout, trimmed.
 pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, Error> {
     let out = Command::new("git")
         .arg("-C")
