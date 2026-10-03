@@ -4,11 +4,13 @@
 //! [`TurnEvent`]s. The claude-code adapter ([`ClaudeCode`]) spawns `claude -p` with the command
 //! line of FINDINGS F-1 (no `--bare`) and arch-design#33 option A (`--session-id` / `--resume`,
 //! no `--no-session-persistence`). The [`ReplayDriver`] plays recorded stream-json instead, so the
-//! session engine is testable without a Claude login. Hooks and MCP tools land with #46.
+//! session engine is testable without a Claude login. The [`tool_layer`] is the agent's
+//! confinement: `arch hook pre|post`, the MCP tools, and the files that hand them to the driver.
 
 mod claude_code;
 mod replay;
 mod stream;
+pub mod tool_layer;
 
 use std::path::PathBuf;
 use std::process::Child;
