@@ -16,3 +16,7 @@ arch-views.workspace = true
 arch-driver.workspace = true
 arch-forge.workspace = true
 anyhow.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
