@@ -382,9 +382,9 @@ fn the_document_is_valid_stable_and_survives_the_store() {
         .tree_files(&key)
         .unwrap()
         .into_iter()
-        .find(|(p, _)| p == Path::new("src/main.rs"))
+        .find(|f| f.path == Path::new("src/main.rs"))
         .unwrap();
-    let delta = store.file_facts(&main.1).unwrap().unwrap();
+    let delta = store.file_facts(&main.facts_key).unwrap().unwrap();
     assert_eq!(delta.degraded.as_deref(), Some(SYNTAX_REASON));
     assert!(delta.items.iter().any(|i| i.name == "main"));
 }

@@ -5,10 +5,11 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
--- One file's facts at one content hash: the per-file delta (ADR 0002).
+-- One file's facts: the per-file delta, named by path · content hash · package id (ADR 0002).
 CREATE TABLE IF NOT EXISTS file_facts (
-  file_hash TEXT PRIMARY KEY,
+  facts_key TEXT PRIMARY KEY,
   path      TEXT NOT NULL,
+  file_hash TEXT NOT NULL,
   facts     TEXT NOT NULL,          -- FileFacts as JSON
   degraded  TEXT                    -- reason when syntax-level only (ADR 0010)
 );
@@ -25,10 +26,11 @@ CREATE TABLE IF NOT EXISTS trees (
 CREATE TABLE IF NOT EXISTS tree_files (
   tree_key  TEXT NOT NULL REFERENCES trees(key) ON DELETE CASCADE,
   path      TEXT NOT NULL,
-  file_hash TEXT NOT NULL,
+  file_hash TEXT NOT NULL,          -- what changed_files compares
+  facts_key TEXT NOT NULL,          -- which delta holds the file's facts
   PRIMARY KEY (tree_key, path)
 );
-CREATE INDEX IF NOT EXISTS tree_files_by_hash ON tree_files(file_hash);
+CREATE INDEX IF NOT EXISTS tree_files_by_facts ON tree_files(facts_key);
 
 -- Commits as facts (spec §7), and which tree's branch they are on.
 CREATE TABLE IF NOT EXISTS commits (
@@ -49,10 +51,11 @@ CREATE TABLE IF NOT EXISTS branches (
   head TEXT NOT NULL
 );
 
+-- A worktree's current tree: while one points at a worktree state, that state is kept.
 CREATE TABLE IF NOT EXISTS worktrees (
   path        TEXT PRIMARY KEY,
-  state_hash  TEXT NOT NULL,
-  base_commit TEXT NOT NULL,
+  tree_key    TEXT NOT NULL,        -- "commit:<hash>" | "worktree:<state-hash>"
+  base_commit TEXT,
   branch      TEXT
 );
 

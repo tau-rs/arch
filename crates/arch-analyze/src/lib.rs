@@ -19,14 +19,15 @@
 use std::path::{Path, PathBuf};
 
 use arch_facts::{
-    Analyzer as Analyzer_, ArchDir, ContentHash, Degraded, Event, Facts, FileFacts, Repo, Store,
-    TreeHead, TreeKey, Unit,
+    Analyzer as Analyzer_, ArchDir, ContentHash, Degraded, Event, Facts, FactsKey, FileFacts, Repo,
+    Store, TreeFile, TreeHead, TreeKey, Unit,
 };
 
 pub mod assemble;
 pub mod cargo;
 pub mod git;
 pub mod items;
+pub mod package;
 pub mod pass;
 pub mod ra;
 pub mod sql;
@@ -128,6 +129,8 @@ pub struct Analyzer {
     options: Options,
     session: Option<ra::Session>,
     load_error: Option<String>,
+    /// How the repository names its objects, for package ids (ADR 0002).
+    format: package::ObjectFormat,
 }
 
 impl Analyzer {
@@ -147,11 +150,17 @@ impl Analyzer {
                 }
             }
         };
+        let format = if git::is_repo(&root) {
+            package::ObjectFormat::of_repo(&root)
+        } else {
+            package::ObjectFormat::default()
+        };
         Ok(Analyzer {
             root,
             options,
             session,
             load_error,
+            format,
         })
     }
 
@@ -200,10 +209,10 @@ impl Analyzer {
         Ok(events)
     }
 
-    /// Analyze into `store`: `put_tree → put_file_facts → facts(key)`. Returns the key.
+    /// Analyze into `store`: `put_tree` with every file's delta under its facts key (ADR 0002),
+    /// then `set_worktree`. Returns the key; `store.facts(key)` assembles the facts.
     ///
-    /// Every file of the unit is written on each call and its delta overwritten, because a
-    /// file's links depend on other files (arch-design issue 21).
+    /// The whole unit is analysed on each call.
     pub fn index(&mut self, store: &mut Store) -> Result<TreeKey, Error> {
         let root = self.root.clone();
         let options = &self.options;
@@ -219,12 +228,19 @@ impl Analyzer {
             walk_dir(&root)
         };
         let mut hashed: Vec<(PathBuf, ContentHash)> = Vec::with_capacity(files.len());
+        let mut blobs: Vec<(PathBuf, package::Blob)> = Vec::with_capacity(files.len());
         for f in &files {
-            let bytes = std::fs::read(root.join(f)).map_err(|source| Error::Io {
-                path: root.join(f),
+            let path = root.join(f);
+            let io = |source| Error::Io {
+                path: path.clone(),
                 source,
-            })?;
+            };
+            let bytes = std::fs::read(&path).map_err(io)?;
             hashed.push((f.clone(), ContentHash::of_bytes(&bytes)));
+            blobs.push((
+                f.clone(),
+                package::Blob::of_file(self.format, &path, &bytes).map_err(io)?,
+            ));
         }
 
         let clean = in_git && !git::is_dirty(&root).unwrap_or(true);
@@ -315,6 +331,7 @@ impl Analyzer {
             }
             (Commits::Branch, true) => branch_commits(&root),
         };
+        let keys = self.facts_keys(&plan, &out, &hashed, &blobs, &tree_head);
         let mut deltas = Vec::with_capacity(hashed.len());
         for (path, hash) in &hashed {
             let rel = path.to_string_lossy().replace('\\', "/");
@@ -337,12 +354,86 @@ impl Analyzer {
         tree_head.assembled = assemble::derive(&plan, &lock, &deltas, &out.walk, type_checked);
 
         let hashes: Vec<String> = commits.iter().map(|c| c.hash.clone()).collect();
+        let tree_files: Vec<TreeFile> = hashed
+            .iter()
+            .zip(keys)
+            .map(|((path, file_hash), facts_key)| TreeFile {
+                path: path.clone(),
+                file_hash: file_hash.clone(),
+                facts_key,
+            })
+            .collect();
         store.put_commits(&commits)?;
-        store.put_tree(&key, head.as_deref(), &hashed, &tree_head, &hashes)?;
-        for facts in &deltas {
-            store.put_file_facts(facts)?;
-        }
+        store.put_tree(
+            &key,
+            head.as_deref(),
+            &tree_files,
+            &tree_head,
+            &hashes,
+            &deltas,
+        )?;
+        // This worktree is now on `key`: the state it leaves is forgotten unless another
+        // worktree is on it (ADR 0002).
+        let branch = in_git.then(|| git::current_branch(&root)).flatten();
+        store.set_worktree(&root, &key, head.as_deref(), branch.as_deref())?;
         Ok(key)
+    }
+
+    /// The facts key of each file (ADR 0002): its path, its content hash and the id of its
+    /// package, or of the packages whose crates walk it. A file no package holds is named by the
+    /// unit's id.
+    fn facts_keys(
+        &self,
+        plan: &cargo::UnitPlan,
+        out: &pass::Output,
+        hashed: &[(PathBuf, ContentHash)],
+        blobs: &[(PathBuf, package::Blob)],
+        head: &TreeHead,
+    ) -> Vec<FactsKey> {
+        let trees = package::tree_ids(self.format, blobs);
+        let lock = blobs
+            .iter()
+            .find(|(p, _)| p == Path::new("Cargo.lock"))
+            .map(|(_, b)| b.hex());
+        let analyzer = format!(
+            "analyzer {} {}
+unit {} {}
+degraded {}
+",
+            head.analyzer.version,
+            if self.session.is_some() {
+                "resolved"
+            } else {
+                "syntax"
+            },
+            head.repo.unit.id,
+            head.repo.unit.main_target,
+            serde_json::to_string(&head.analyzer.degraded).unwrap_or_default(),
+        );
+        let ids = package::package_ids(plan, &trees, lock.as_deref(), &analyzer);
+        // Innermost package directory first.
+        let mut dirs: Vec<(PathBuf, usize)> = (0..plan.packages.len())
+            .map(|p| (package::package_dir(plan, p), p))
+            .collect();
+        dirs.sort_by_key(|(d, _)| std::cmp::Reverse(d.components().count()));
+        hashed
+            .iter()
+            .map(|(path, hash)| {
+                let rel = path.to_string_lossy().replace('\\', "/");
+                let package = match out.owners.get(&rel) {
+                    Some(owners) => owners
+                        .iter()
+                        .map(|p| ids.packages[*p].as_str())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    None => dirs
+                        .iter()
+                        .find(|(d, _)| path.starts_with(d))
+                        .map_or(ids.unit.clone(), |(_, p)| ids.packages[*p].clone()),
+                };
+                FactsKey::of(path, hash, &package)
+            })
+            .collect()
     }
 }
 

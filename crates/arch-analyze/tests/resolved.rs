@@ -259,6 +259,7 @@ fn a_changed_file_is_recomputed_without_loading_again() {
     let mut store = Store::in_memory().unwrap();
     let before = analyzer.index(&mut store).unwrap();
     let facts = store.facts(&before).unwrap().unwrap();
+    let files_before = store.tree_files(&before).unwrap();
     let tick = item("live[bin:live]::b::impl Meter::tick#fn");
     assert!(!facts.links.iter().any(|l| l.to == tick));
 
@@ -286,10 +287,20 @@ fn a_changed_file_is_recomputed_without_loading_again() {
             Confidence::Resolved
         )
     );
-    assert_eq!(
-        store.changed_files(&before, &after).unwrap(),
-        [PathBuf::from("src/a.rs")]
-    );
+    // The worktree moved on, so its old state is gone; only `src/a.rs` differs from it.
+    assert!(!store.has_tree(&before).unwrap());
+    let changed: Vec<PathBuf> = store
+        .tree_files(&after)
+        .unwrap()
+        .into_iter()
+        .filter(|f| {
+            !files_before
+                .iter()
+                .any(|b| b.path == f.path && b.file_hash == f.file_hash)
+        })
+        .map(|f| f.path)
+        .collect();
+    assert_eq!(changed, [PathBuf::from("src/a.rs")]);
     assert!(
         took.as_secs() < 5,
         "recompute took {took:?}; the budget itself is checked by the benchmark"

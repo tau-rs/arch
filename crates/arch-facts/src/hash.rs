@@ -1,7 +1,8 @@
 //! Content hashes and tree keys (ADR 0002).
 //!
-//! Facts are keyed by commit hash as per-file deltas with content hashes; uncommitted work is
-//! keyed by a worktree-state hash; a rebase reuses deltas by file hash.
+//! Facts are keyed by commit hash as per-file deltas; uncommitted work is keyed by a
+//! worktree-state hash; a delta is named by its file's path, content hash and package id
+//! ([`FactsKey`]), and a rebase reuses the deltas whose key is unchanged.
 
 use std::fmt;
 use std::path::Path;
@@ -50,6 +51,39 @@ impl ContentHash {
 }
 
 impl fmt::Display for ContentHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// What names one file's facts (ADR 0002): a hash of its path, its content hash and its package
+/// id. The package id names everything else the facts depend on (the package's git tree id, the
+/// packages it depends on, `Cargo.lock`, the analyzer), so two trees share a file's delta only
+/// when it is the same delta.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct FactsKey(pub String);
+
+impl FactsKey {
+    /// The key of the facts of the file at `path`, with content `file_hash`, in a package whose
+    /// id is `package`.
+    pub fn of(path: &Path, file_hash: &ContentHash, package: &str) -> Self {
+        let mut hasher = Sha256::new();
+        hasher.update(path.to_string_lossy().replace('\\', "/").as_bytes());
+        hasher.update([0]);
+        hasher.update(file_hash.0.as_bytes());
+        hasher.update([0]);
+        hasher.update(package.as_bytes());
+        FactsKey(hex::encode(hasher.finalize()))
+    }
+
+    /// The hex digest.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for FactsKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
@@ -120,6 +154,17 @@ mod tests {
             h1,
             ContentHash::of_worktree_state([(a.0, &a.1), (c.0, &c.1)])
         );
+    }
+
+    #[test]
+    fn a_facts_key_names_path_content_and_package() {
+        let h = ContentHash::of_str("fn main() {}");
+        let k = FactsKey::of(Path::new("src/main.rs"), &h, "p1");
+        assert_eq!(k, FactsKey::of(Path::new("src/main.rs"), &h, "p1"));
+        assert_ne!(k, FactsKey::of(Path::new("src/lib.rs"), &h, "p1"));
+        assert_ne!(k, FactsKey::of(Path::new("src/main.rs"), &h, "p2"));
+        let h2 = ContentHash::of_str("fn main() { }");
+        assert_ne!(k, FactsKey::of(Path::new("src/main.rs"), &h2, "p1"));
     }
 
     #[test]

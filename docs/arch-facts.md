@@ -62,26 +62,36 @@ older `schema_version` in `meta` is dropped and recreated).
 
 | table | what | ADR |
 |---|---|---|
-| `file_facts` | one file's facts at one content hash (`FileFacts` as JSON): the per-file delta | 0002 |
-| `trees`, `tree_files` | a commit or a worktree state → its files at their hashes, plus its `TreeHead` (repo, analyzer, crates, and the facts assembled across files) | 0002, 0007, 0010 |
+| `file_facts` | one file's facts (`FileFacts` as JSON), the per-file delta, under its facts key `hash(path · content hash · package id)` | 0002 |
+| `trees`, `tree_files` | a commit or a worktree state → its files with their content hash and facts key, plus its `TreeHead` (repo, analyzer, crates, and the facts assembled across files) | 0002, 0007, 0010 |
 | `commits`, `tree_commits` | commits as facts, and which are on a tree's branch | 0016 |
-| `branches`, `worktrees` | pointers: branch → head; worktree → state hash, base commit, branch | 0002 |
+| `branches`, `worktrees` | pointers: branch → head; worktree → current tree, base commit, branch | 0002 |
 | `view_cache` | per-branch view payloads, tagged with the tree they were computed at | views |
 | `plan_drafts` | plans until Accept; discard deletes | 0020 |
 
-The flow the analyzer follows: `put_tree(key, files)` → `missing_file_facts(key)` tells it which
-files to compute → `put_file_facts` per file → `facts(key)` assembles the document, sorted per the
-stability rules above. `facts` adds the tree's assembled facts (entries, ports, externals,
+The flow the analyzer follows: `put_tree(key, files, deltas)` records the tree, each file with its
+content hash and facts key, and the deltas it computed, in one transaction (`missing_file_facts`
+names the files whose key has no delta yet) → `set_worktree(path, key)` → `facts(key)` assembles
+the document, sorted per the stability rules above. `facts` adds the tree's assembled facts (entries, ports, externals,
 tables, links derived across files) and sets each item's `entry` flag (an entry names it) and
 `reexported` flag (a `re-exports` link points at it), since either may sit in another file. A rebase or a second worktree on the same base needs no recompute: deltas
-are shared by file hash. `tests/golden.rs` proves the round trip on `schemas/examples/*.json` and
+are shared by facts key. A key names the file's path, its content hash and its package id (the
+package's git tree id with those of the unit packages it depends on, the `Cargo.lock` blob id and
+the analyzer's inputs; arch-analyze computes it), so two trees share a delta only when it is the
+same delta (ADR 0002). `changed_files` still compares content hashes.
+
+Retention (ADR 0002, a cache rule of the store): when `set_worktree` moves a worktree to another
+tree, or `remove_worktree` forgets it, the tree it left is deleted if it is a worktree state no
+other worktree is on, then the deltas no recorded tree references are pruned. Commit trees are
+kept. One consequence: a tree key held elsewhere (an event, a view cache row) may no longer
+resolve; read the worktree's current tree instead. `tests/golden.rs` proves the round trip on `schemas/examples/*.json` and
 on every pinned `golden/<repo>/facts.json`.
 
 ```mermaid
 flowchart LR
-  A[analyzer] -- put_tree(key, path→hash) --> S[(store)]
+  A[analyzer] -- "put_tree(key, path→hash·facts key, deltas)" --> S[(store)]
   S -- missing_file_facts --> A
-  A -- put_file_facts(FileFacts) --> S
+  A -- "set_worktree(path, key): retire the state left, prune" --> S
   V[views / check] -- facts(key) --> S
 ```
 

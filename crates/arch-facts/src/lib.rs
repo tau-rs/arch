@@ -29,7 +29,7 @@ pub use arch_dir::{
 };
 pub use error::{Error, Result};
 pub use event::{Attribution, Event, SubsystemState};
-pub use hash::{ContentHash, TreeKey};
+pub use hash::{ContentHash, FactsKey, TreeKey};
 pub use model::*;
 pub use session::*;
-pub use store::{Assembled, FileFacts, Store, TreeHead};
+pub use store::{Assembled, FileFacts, Store, TreeFile, TreeHead, WorktreeState};

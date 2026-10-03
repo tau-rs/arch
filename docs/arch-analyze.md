@@ -103,10 +103,22 @@ of another target carry `<crate>[<kind>:<target>]`, e.g. `orderly[bin:orderly]::
 
 ## Store flow and recompute
 
-`index` records the tree (`put_tree`), then writes one `FileFacts` per file of the tree; files
-that are not sources of the unit get an empty delta, so `missing_file_facts` is empty afterwards.
-The syntax-level pass recomputes the whole unit on each call and overwrites the deltas, because
-a file's links depend on other files (arch-design issue 21).
+`index` records the tree with one `FileFacts` per file of the tree (`put_tree`); files that are
+not sources of the unit get an empty delta, so `missing_file_facts` is empty afterwards. It then
+points the worktree at the tree (`set_worktree`), which forgets the state the worktree left.
+The pass still recomputes the whole unit on each call.
+
+Each delta is stored under its facts key (ADR 0002): `hash(path · content hash · package id)`.
+The package id is computed in-process (`package`), in git's object format, from the bytes `index`
+reads anyway: the package directory's tree id, as `git write-tree` gives it for the working files
+(`git rev-parse <commit>:<dir>` once committed), combined with the tree ids of the unit packages
+it depends on (transitively), the `Cargo.lock` blob id, and the analyzer's inputs (version,
+effective depth, unit, degraded crates). A Rust file is keyed by the packages whose crates walk
+it; any other file by its innermost package, or the unit's id outside every package. Why not a
+`git` process: a temporary index with `git add -A` and `git write-tree` took 28–41 ms for 101
+files and writes loose objects into the repository on every save. Known gap: submodules and
+symlinks to directories are not among the files read, so a tree holding them gets another id
+than git's.
 
 A delta holds what its file declares and the links it makes, plus the file's *notes* (opaque to
 the store): routes, spawns, SQL touches, crate paths, HTTP hosts and terminal writes, tests,
