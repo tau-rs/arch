@@ -6,13 +6,16 @@
 //!
 //! Present today, for `arch check` (milestone 4, issue #5): [`placement`] (which area and side
 //! an item sits in), [`findings`] (dependency rules evaluated on links) and [`propose`] (the
-//! `areas.toml` that `arch init` writes).
+//! `areas.toml` that `arch init` writes). For the session engine (milestone 5, issue #47):
+//! [`pack`], the context pack every agent reads (ADR 0005).
 
 pub mod findings;
+pub mod pack;
 pub mod placement;
 pub mod propose;
 
 pub use findings::{Allowed, Finding, Report, check_rules};
+pub use pack::{PackInput, context_pack};
 pub use placement::{Placement, Placements};
 pub use propose::propose_areas;
 
@@ -29,4 +32,7 @@ pub enum Error {
         /// Why.
         reason: String,
     },
+    /// The context pack was asked for an element the plan does not hold.
+    #[error("plan: no element `{0}`")]
+    UnknownElement(String),
 }

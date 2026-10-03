@@ -279,3 +279,105 @@ fn archive_moves_the_session_folder_to_refs_notes_arch_and_restores_it() {
     assert_eq!(dir.files().unwrap(), before);
     assert_eq!(dir.read_plan().unwrap(), Some(plan));
 }
+
+#[test]
+fn session_record_round_trips_with_its_cursor() {
+    let (_tmp, arch) = arch_in_tmp();
+    let id = SessionId::new("3c9e1f0a");
+    let dir = arch.session(&id);
+    assert_eq!(dir.read_session().unwrap(), None, "no record before Accept");
+
+    let e1 = ElementId::from_str_unchecked("a3f9c2e1");
+    let e2 = ElementId::from_str_unchecked("7b10d4aa");
+    let mut session = Session {
+        id: id.clone(),
+        name: "add a refund flow".into(),
+        state: SessionState::Deviation,
+        branch: Some("arch/3c9e1f0a".into()),
+        worktree: Some("/tmp/smallsvc-w1".into()),
+        base: Some("0123abcd".into()),
+        driver: None,
+        created: "2026-10-03T10:00:00Z".parse().unwrap(),
+        cursor: Cursor {
+            group: 0,
+            todo: vec![e1.clone(), e2.clone()],
+            fix_round: 1,
+            extra_rounds: 0,
+            waiting: Some(Waiting {
+                element: e1.clone(),
+                denied: vec!["src/other.rs".into()],
+            }),
+        },
+        agents: vec![],
+    };
+    session.set_agent(
+        e1.clone(),
+        DriverPointer {
+            driver: "claude-code".into(),
+            session_id: "first".into(),
+            transcript_path: None,
+        },
+    );
+    session.set_agent(
+        e1.clone(),
+        DriverPointer {
+            driver: "claude-code".into(),
+            session_id: "9f1c…".into(),
+            transcript_path: Some("/home/me/.claude/projects/x/9f1c.jsonl".into()),
+        },
+    );
+    assert_eq!(session.agents.len(), 1, "one driver session per element");
+    assert_eq!(session.agent(&e1).unwrap().session_id, "9f1c…");
+    assert_eq!(session.agent(&e2), None);
+
+    dir.write_session(&session).unwrap();
+    assert_eq!(dir.read_session().unwrap(), Some(session));
+    let text = std::fs::read_to_string(dir.session_path()).unwrap();
+    assert_eq!(
+        text,
+        r#"id = "3c9e1f0a"
+name = "add a refund flow"
+state = "deviation"
+branch = "arch/3c9e1f0a"
+worktree = "/tmp/smallsvc-w1"
+base = "0123abcd"
+created = "2026-10-03T10:00:00Z"
+
+[cursor]
+group = 0
+todo = [
+    "a3f9c2e1",
+    "7b10d4aa",
+]
+fix_round = 1
+extra_rounds = 0
+
+[cursor.waiting]
+element = "a3f9c2e1"
+denied = ["src/other.rs"]
+
+[[agents]]
+element = "a3f9c2e1"
+driver = "claude-code"
+session_id = "9f1c…"
+transcript_path = "/home/me/.claude/projects/x/9f1c.jsonl"
+"#,
+        "the published shape (arch-design#117)"
+    );
+}
+
+#[test]
+fn a_minimal_session_record_reads_with_an_empty_cursor() {
+    let (_tmp, arch) = arch_in_tmp();
+    let id = SessionId::new("s1");
+    let dir = arch.session(&id);
+    std::fs::create_dir_all(dir.root()).unwrap();
+    std::fs::write(
+        dir.session_path(),
+        "id = \"s1\"\nname = \"n\"\nstate = \"running\"\ncreated = \"2026-10-03T10:00:00Z\"\n",
+    )
+    .unwrap();
+    let s = dir.read_session().unwrap().unwrap();
+    assert_eq!(s.cursor, Cursor::default());
+    assert!(s.agents.is_empty());
+}
