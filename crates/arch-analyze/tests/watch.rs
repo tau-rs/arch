@@ -118,6 +118,26 @@ fn a_burst_of_saves_is_one_batch_for_its_worktree_only() {
 }
 
 #[test]
+fn a_directory_created_after_the_watch_starts_is_reported_and_watched() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (repo, w1) = repo_with_worktree(tmp.path());
+    let watcher = watch(&[repo, w1.clone()]);
+
+    // Files written right after their directory, before a watch on it can land.
+    std::fs::create_dir(w1.join("src/x")).unwrap();
+    write(&w1, "src/x/mod.rs", "pub mod y;\n");
+    write(&w1, "src/x/y/mod.rs", "pub fn y() {}\n");
+    let batch = watcher.recv_timeout(DELIVERY).expect("one batch");
+    assert_eq!(batch.worktree, w1);
+    assert_eq!(paths(&batch), ["src/x/mod.rs", "src/x/y/mod.rs"]);
+
+    // The new directories are watched from then on.
+    write(&w1, "src/x/y/later.rs", "pub fn later() {}\n");
+    let batch = watcher.recv_timeout(DELIVERY).expect("the later batch");
+    assert_eq!(paths(&batch), ["src/x/y/later.rs"]);
+}
+
+#[test]
 fn a_write_the_tool_layer_expects_is_the_sessions_and_any_other_is_you() {
     let tmp = tempfile::tempdir().unwrap();
     let (repo, w1) = repo_with_worktree(tmp.path());
