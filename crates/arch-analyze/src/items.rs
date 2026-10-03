@@ -236,12 +236,13 @@ impl Walker<'_> {
             .unique(format!("{prefix}::{name}#{}", kind_str(kind)));
         flags.cfg = cfg_of(&attrs).or_else(|| scope.cfg.map(str::to_string));
         let is_test = kind == ItemKind::Fn && is_test_attr(&attrs);
-        flags.entry = is_test
-            || (kind == ItemKind::Fn
-                && name == "main"
-                && self.krate.is_bin
-                && scope.is_root
-                && scope.parent.is_none());
+        // Entries are `main`, framework-held handlers and spawned workers (ADR 0028). A test is
+        // not one: what it exercises is carried by its `tests` links.
+        flags.entry = kind == ItemKind::Fn
+            && name == "main"
+            && self.krate.is_bin
+            && scope.is_root
+            && scope.parent.is_none();
         self.found.push(Found {
             item: Item {
                 id,
@@ -644,7 +645,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{id}"))
         };
         assert!(by("c::main#fn").item.flags.entry);
-        assert!(by("c::tests::t#fn").is_test && by("c::tests::t#fn").item.flags.entry);
+        assert!(by("c::tests::t#fn").is_test && !by("c::tests::t#fn").item.flags.entry);
         assert!(by("c::tests::u#fn").is_test);
         assert!(!by("c::tests::helper#fn").item.flags.entry);
         assert_eq!(

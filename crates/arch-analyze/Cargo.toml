@@ -18,7 +18,19 @@ thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
+ra_ap_ide = "=0.0.356"
+ra_ap_ide_db = "=0.0.356"
+ra_ap_hir = "=0.0.356"
+ra_ap_load-cargo = "=0.0.356"
+ra_ap_project_model = "=0.0.356"
+ra_ap_vfs = "=0.0.356"
+ra_ap_paths = "=0.0.356"
+ra_ap_proc_macro_api = "=0.0.356"
 
 [dev-dependencies]
 tempfile.workspace = true
 jsonschema.workspace = true
+
+[[bench]]
+name = "budgets"
+harness = false

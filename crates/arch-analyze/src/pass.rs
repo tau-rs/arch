@@ -23,6 +23,8 @@ use crate::cargo::{TargetKind, UnitPlan};
 use crate::items::{self, CrateCtx, Found, Ids, Lines};
 use crate::sql;
 
+mod resolved;
+
 /// The facts of one file, before they are wrapped with its hash.
 #[derive(Debug, Default, Clone)]
 pub struct Parts {
@@ -116,6 +118,14 @@ enum Cur {
     Variant(usize, String),
 }
 
+/// What a name resolved to, once one candidate is chosen.
+#[derive(Debug, Clone)]
+enum Tgt {
+    Item(usize),
+    Variant(usize, String),
+    Ext { pkg: String, path: String },
+}
+
 #[derive(Debug, Clone)]
 enum Ty {
     Item(usize),
@@ -186,6 +196,12 @@ struct Unit<'a> {
     routes: Vec<Route>,
     http: BTreeMap<String, Witness>,
     tty: Option<Witness>,
+    /// `Cargo.lock` packages by the name code spells (`sqlx_core`): package name and line.
+    lock: HashMap<String, (String, u32)>,
+    /// The type-checked view was available: entries it confirms are `resolved`.
+    type_checked: bool,
+    /// Set while links come from the type-checked view: they are `resolved` and need no reason.
+    resolved: bool,
 }
 
 fn segs(path: &ast::Path) -> Option<Vec<String>> {
@@ -303,6 +319,9 @@ impl<'a> Unit<'a> {
             routes: Vec::new(),
             http: BTreeMap::new(),
             tty: None,
+            resolved: false,
+            type_checked: false,
+            lock: lock_packages(root),
         };
         for ut in &plan.unit {
             let package = &plan.packages[ut.package];
@@ -955,7 +974,11 @@ impl<'a> Unit<'a> {
             from,
             to,
             kind,
-            confidence: Confidence::Guessed,
+            confidence: if self.resolved {
+                Confidence::Resolved
+            } else {
+                Confidence::Guessed
+            },
             witness,
             flags: LinkFlags {
                 origin,
@@ -963,7 +986,7 @@ impl<'a> Unit<'a> {
                 compile_time,
                 r#unsafe: false,
             },
-            reason: Some(reason.to_string()),
+            reason: (!self.resolved).then(|| reason.to_string()),
             member,
         });
     }
@@ -1154,15 +1177,36 @@ impl<'a> Unit<'a> {
             return;
         };
         let w = self.witness(fi, at);
+        let tgt = match &cur {
+            Cur::Items(v) => self.pick(v, &ctx).map(Tgt::Item),
+            Cur::Variant(e, name) => Some(Tgt::Variant(*e, name.clone())),
+            Cur::Ext { pkg, path } => Some(Tgt::Ext {
+                pkg: pkg.clone(),
+                path: path.clone(),
+            }),
+        };
+        if let Some(tgt) = tgt {
+            self.emit(owner, tgt, &ctx, &expr, w.clone());
+        }
+        if ctx == Ctx::Call
+            && let Some(call) = ast::CallExpr::cast(expr)
+        {
+            self.on_call(fi, &call, &s, &cur, owner, w);
+        }
+    }
+
+    /// The link a name gives in a context: the one table both passes share. `expr` is the
+    /// expression or type node the name sits in.
+    fn emit(&mut self, owner: usize, tgt: Tgt, ctx: &Ctx, expr: &SyntaxNode, w: Witness) {
         let why = "path followed through modules and `use`";
         let is_test = self.items[owner].f.is_test;
-        match &cur {
-            Cur::Items(v) => {
-                let Some(t) = self.pick(v, &ctx) else { return };
+        let self_idx = self.self_of.get(&owner).copied();
+        match tgt {
+            Tgt::Item(t) => {
                 let to = Target::Item(self.id(t).to_string());
-                let (kind, member, access) = match (self.kind(t), &ctx) {
+                let (kind, member, access) = match (self.kind(t), ctx) {
                     (ItemKind::Fn, Ctx::Call) => {
-                        if is_spawn_arg(&expr) {
+                        if is_spawn_arg(expr) {
                             // `spawn(f(..))` hands `f` off (see `on_call`); it is not a direct call.
                             return;
                         }
@@ -1223,27 +1267,24 @@ impl<'a> Unit<'a> {
                         _ => None,
                     };
                     if let Some(made) = made {
-                        self.wires(owner, made, &expr, w.clone());
+                        self.wires(owner, made, expr, w);
                     }
                 }
-                if ctx == Ctx::Call && self.kind(t) == ItemKind::Fn {
-                    // Nothing more: a spawn's argument is handled where the spawn is seen.
-                }
             }
-            Cur::Variant(e, name) => {
+            Tgt::Variant(e, name) => {
                 let kind = match ctx {
                     Ctx::Call | Ctx::Construct | Ctx::Value => LinkKind::Constructs,
                     Ctx::Pattern => LinkKind::MatchesOn,
                     _ => return,
                 };
-                let to = Target::Item(self.id(*e).to_string());
-                self.link(owner, to, kind, Some(name.clone()), w.clone(), why, None);
+                let to = Target::Item(self.id(e).to_string());
+                self.link(owner, to, kind, Some(name), w, why, None);
             }
-            Cur::Ext { pkg, path: p } => {
+            Tgt::Ext { pkg, path: p } => {
                 if !p.contains("::") {
                     return;
                 }
-                let (kind, member) = match &ctx {
+                let (kind, member) = match ctx {
                     Ctx::Call => (LinkKind::CallsOut, None),
                     Ctx::Value => (LinkKind::RefersTo, None),
                     Ctx::Construct => (LinkKind::Constructs, None),
@@ -1254,18 +1295,13 @@ impl<'a> Unit<'a> {
                     Ctx::Macro => (LinkKind::Expands, None),
                     Ctx::Pattern => return,
                 };
-                let shown = if ctx == Ctx::Macro {
+                let shown = if *ctx == Ctx::Macro {
                     format!("{p}!")
                 } else {
-                    p.clone()
+                    p
                 };
-                self.external(owner, pkg, &shown, kind, member, w.clone(), why);
+                self.external(owner, &pkg, &shown, kind, member, w, why);
             }
-        }
-        if ctx == Ctx::Call
-            && let Some(call) = ast::CallExpr::cast(expr)
-        {
-            self.on_call(fi, &call, &s, &cur, owner, w);
         }
     }
 
@@ -1283,6 +1319,8 @@ impl<'a> Unit<'a> {
         if !passed {
             return;
         }
+        // A pattern, not a type-checked fact: it stays guessed in both passes.
+        let was = std::mem::replace(&mut self.resolved, false);
         for (imp, tr) in self.trait_impls.get(&made).cloned().unwrap_or_default() {
             let why = format!(
                 "builds a `{}` and passes it on; it implements `{}`",
@@ -1298,6 +1336,7 @@ impl<'a> Unit<'a> {
                 None,
             );
         }
+        self.resolved = was;
     }
 
     fn on_call(
@@ -1925,7 +1964,7 @@ impl<'a> Unit<'a> {
     }
 
     /// ADR 0028: the functions a start-up spawn runs forever are entries.
-    fn spawned_workers(&self, entries: &BTreeSet<usize>) -> Vec<(usize, Witness)> {
+    fn spawned_workers(&self, entries: &BTreeSet<usize>) -> Vec<(usize, Witness, bool)> {
         let mut calls: HashMap<usize, Vec<usize>> = HashMap::new();
         for l in self.links.values() {
             if l.kind == LinkKind::Calls
@@ -1964,7 +2003,7 @@ impl<'a> Unit<'a> {
             .filter(|e| !self.items[*e].f.is_test)
             .collect();
         let from_entries = reach(&non_test, None);
-        let mut out: Vec<(usize, Witness)> = Vec::new();
+        let mut out: Vec<(usize, Witness, bool)> = Vec::new();
         for s in &self.spawns {
             let test_code = |i: usize| {
                 self.items[i].f.is_test
@@ -1998,8 +2037,8 @@ impl<'a> Unit<'a> {
             let loops = reach(&[s.target], Some(&top))
                 .into_iter()
                 .any(|f| items::has_unbounded_loop(&self.items[f].f.node));
-            if loops && !out.iter().any(|(t, _)| *t == s.target) {
-                out.push((s.target, s.witness.clone()));
+            if loops && !out.iter().any(|(t, _, _)| *t == s.target) {
+                out.push((s.target, s.witness.clone(), mains.contains(&s.owner)));
             }
         }
         out
@@ -2024,6 +2063,13 @@ impl<'a> Unit<'a> {
             .replace('\\', "/");
 
         // Entries: main, tests, routed handlers, spawned workers.
+        // What cargo and the type-checked view establish is resolved; at syntax depth every
+        // fact is a guess (ADR 0010). A route is a pattern at either depth.
+        let sure = if self.type_checked {
+            Confidence::Resolved
+        } else {
+            Confidence::Guessed
+        };
         let mut entries: BTreeMap<usize, Entry> = BTreeMap::new();
         for (i, it) in self.items.iter().enumerate() {
             if it.f.item.flags.entry {
@@ -2039,7 +2085,7 @@ impl<'a> Unit<'a> {
                         item: it.f.item.id.clone(),
                         kind: EntryKind::Main,
                         framework: None,
-                        confidence: Confidence::Guessed,
+                        confidence: sure,
                         witness,
                     },
                 );
@@ -2067,12 +2113,14 @@ impl<'a> Unit<'a> {
             let _ = r.owner;
         }
         let known: BTreeSet<usize> = entries.keys().copied().collect();
-        for (worker, witness) in self.spawned_workers(&known) {
+        for (worker, witness, in_main) in self.spawned_workers(&known) {
             entries.entry(worker).or_insert(Entry {
                 item: self.id(worker).to_string(),
                 kind: EntryKind::SpawnedWorker,
                 framework: None,
-                confidence: Confidence::Guessed,
+                // ADR 0028: resolved when the spawn is in `main`'s own body, guessed when it is
+                // only reached from `main`.
+                confidence: if in_main { sure } else { Confidence::Guessed },
                 witness,
             });
         }
@@ -2163,7 +2211,13 @@ impl<'a> Unit<'a> {
                     .find(|d| &d.package == pkg)
                     .map(|d| (p.manifest.to_string_lossy().replace('\\', "/"), d.line))
             });
-            let (file, line) = dep.unwrap_or((main_manifest.clone(), 1));
+            // A crate reached only through another one is declared by the lock file.
+            let locked = self
+                .lock
+                .values()
+                .find(|(name, _)| name == pkg)
+                .map(|(_, line)| ("Cargo.lock".to_string(), *line));
+            let (file, line) = dep.or(locked).unwrap_or((main_manifest.clone(), 1));
             externals.push(External {
                 id: ext_id(pkg),
                 name: pkg.clone(),
@@ -2332,6 +2386,24 @@ impl<'a> Unit<'a> {
     }
 }
 
+/// The packages `Cargo.lock` names, keyed by the name code spells for them.
+fn lock_packages(root: &Path) -> HashMap<String, (String, u32)> {
+    let mut out = HashMap::new();
+    let Ok(text) = std::fs::read_to_string(root.join("Cargo.lock")) else {
+        return out;
+    };
+    for (i, line) in text.lines().enumerate() {
+        if let Some(name) = line
+            .strip_prefix("name = \"")
+            .and_then(|l| l.strip_suffix('"'))
+        {
+            out.entry(name.replace('-', "_"))
+                .or_insert((name.to_string(), i as u32 + 1));
+        }
+    }
+    out
+}
+
 /// Whether a call expression is the direct argument of a spawn call.
 fn is_spawn_arg(call: &SyntaxNode) -> bool {
     let outer = call
@@ -2406,11 +2478,22 @@ fn flatten(tree: &ast::UseTree, prefix: &[String], out: &mut Vec<UseLeaf>) {
 }
 
 /// Run the pass over the unit `plan` describes. `tree_files` are the repository's files, for
-/// finding migrations.
-pub fn run(root: &Path, plan: &UnitPlan, scope: &str, tree_files: &[PathBuf]) -> Result<Output> {
+/// finding migrations. With a rust-analyzer `session`, links come from the type-checked view
+/// and only the pattern links stay guessed.
+pub fn run(
+    root: &Path,
+    plan: &UnitPlan,
+    scope: &str,
+    tree_files: &[PathBuf],
+    session: Option<&crate::ra::Session>,
+) -> Result<Output> {
     let mut unit = Unit::load(root, plan, scope).context("reading the unit's sources")?;
     for fi in 0..unit.files.len() {
         unit.visit_file(fi);
+    }
+    if let Some(session) = session {
+        unit.resolve_links(session);
+        unit.type_checked = true;
     }
     Ok(unit.finish(root, tree_files))
 }
