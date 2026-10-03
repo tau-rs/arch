@@ -14,3 +14,10 @@ workspace = true
 arch-facts.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+pretty_assertions.workspace = true
