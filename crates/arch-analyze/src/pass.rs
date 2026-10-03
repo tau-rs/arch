@@ -50,6 +50,9 @@ pub struct Output {
     pub files: BTreeMap<String, Parts>,
     /// Rust files walked.
     pub rust_files: BTreeSet<String>,
+    /// With rust-analyzer: the walked files it has no module for, by package, whose links stay
+    /// guessed (a crate added since it loaded).
+    pub unresolved: BTreeMap<String, Vec<String>>,
 }
 
 const VERBS: [&str; 7] = ["get", "post", "put", "delete", "patch", "head", "options"];
@@ -202,6 +205,8 @@ struct Unit<'a> {
     type_checked: bool,
     /// Set while links come from the type-checked view: they are `resolved` and need no reason.
     resolved: bool,
+    /// Files rust-analyzer has no module for: their links stay guessed.
+    unresolved: Vec<usize>,
 }
 
 fn segs(path: &ast::Path) -> Option<Vec<String>> {
@@ -320,6 +325,7 @@ impl<'a> Unit<'a> {
             http: BTreeMap::new(),
             tty: None,
             resolved: false,
+            unresolved: Vec::new(),
             type_checked: false,
             lock: lock_packages(root),
         };
@@ -2050,6 +2056,14 @@ impl<'a> Unit<'a> {
         for f in &self.files {
             out.rust_files.insert(f.path.clone());
             out.files.entry(f.path.clone()).or_default();
+        }
+        for &fi in &self.unresolved {
+            let f = &self.files[fi];
+            let package = &self.plan.packages[self.krates[f.krate].package].name;
+            out.unresolved
+                .entry(package.clone())
+                .or_default()
+                .push(f.path.clone());
         }
         let manifest = |u: &Self, krate: usize| {
             u.plan.packages[u.krates[krate].package]

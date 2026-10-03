@@ -41,7 +41,7 @@ struct Resolver<'a, 'db> {
 }
 
 impl Unit<'_> {
-    /// Replace the guessed links of the files rust-analyzer loaded with resolved ones.
+    /// Replace the guessed links of the files rust-analyzer has a module for with resolved ones.
     pub(super) fn resolve_links(&mut self, session: &Session) {
         attach_db(&session.db, || self.resolve_attached(session));
     }
@@ -68,8 +68,20 @@ impl Unit<'_> {
             cache: HashMap::new(),
         };
 
-        let loaded: Vec<(usize, ra_ap_vfs::FileId)> = (0..self.files.len())
-            .filter_map(|fi| Some((fi, session.file_id(&self.files[fi].path)?)))
+        // A file is resolved when rust-analyzer has it in a crate's module tree: one it holds
+        // outside every crate (a crate added since it loaded) keeps its guessed links.
+        let (loaded, unresolved): (Vec<_>, Vec<_>) = (0..self.files.len())
+            .map(|fi| {
+                let id = session
+                    .file_id(&self.files[fi].path)
+                    .filter(|id| r.sema.file_to_module_def(*id).is_some());
+                (fi, id)
+            })
+            .partition(|(_, id)| id.is_some());
+        self.unresolved = unresolved.into_iter().map(|(fi, _)| fi).collect();
+        let loaded: Vec<(usize, ra_ap_vfs::FileId)> = loaded
+            .into_iter()
+            .filter_map(|(fi, id)| Some((fi, id?)))
             .collect();
         let resolved_files: std::collections::HashSet<&str> = loaded
             .iter()

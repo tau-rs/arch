@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
+use ra_ap_ide_db::base_db::salsa::Durability;
+use ra_ap_ide_db::base_db::{FileSet, SourceDatabase, SourceRoot, SourceRootId};
 use ra_ap_ide_db::{ChangeWithProcMacros, RootDatabase};
 use ra_ap_load_cargo::{
     LoadCargoConfig, ProcMacroServerChoice, ProjectFolders, SourceRootConfig, load_workspace,
@@ -105,7 +107,7 @@ impl Session {
         })
     }
 
-    /// rust-analyzer's id for a repository-relative file, when it loaded the file.
+    /// rust-analyzer's id for a repository-relative file, when it has the file.
     pub(crate) fn file_id(&self, rel: &str) -> Option<FileId> {
         self.vfs.file_id(&self.vfs_path(rel)?).map(|(id, _)| id)
     }
@@ -127,34 +129,49 @@ impl Session {
     /// Returns false when rust-analyzer does not know the file and cannot take it: it is outside
     /// every source root of the workspace.
     pub fn file_changed(&mut self, rel: &str, text: Option<String>) -> bool {
-        let mut change = ChangeWithProcMacros::default();
-        match (self.file_id(rel), text) {
-            (Some(id), text) => change.change_file(id, text),
+        let id = match (self.file_id(rel), &text) {
+            (Some(id), _) => id,
             (None, None) => return false,
-            (None, Some(text)) => {
-                let Some(path) = self.vfs_path(rel) else {
-                    return false;
-                };
-                let local = self
-                    .roots
-                    .fsc
-                    .classify_path(&path)
-                    .is_some_and(|i| self.roots.local_filesets.contains(&(i as u64)));
-                if !local {
-                    return false;
-                }
-                self.vfs
-                    .set_file_contents(path.clone(), Some(text.clone().into_bytes()));
-                let Some((id, _)) = self.vfs.file_id(&path) else {
-                    return false;
-                };
-                // The change is applied below; the file system's change log is not read.
-                self.vfs.take_changes();
-                change.change_file(id, Some(text));
-                change.set_roots(self.roots.partition(&self.vfs));
-            }
-        }
+            (None, Some(text)) => match self.add_file(rel, text) {
+                Some(id) => id,
+                None => return false,
+            },
+        };
+        let mut change = ChangeWithProcMacros::default();
+        change.change_file(id, text);
         self.db.apply_change(change);
         true
+    }
+
+    /// Add a file created since the load to the source root of the workspace its path falls in.
+    /// Only that root is set again: setting every root, libraries included, would make
+    /// rust-analyzer re-check all it computed and double the next recompute.
+    fn add_file(&mut self, rel: &str, text: &str) -> Option<FileId> {
+        let path = self.vfs_path(rel)?;
+        let set = self.roots.fsc.classify_path(&path)?;
+        if !self.roots.local_filesets.contains(&(set as u64)) {
+            return None;
+        }
+        // At load, the n-th file set of the grouping became source root n.
+        let root_id = SourceRootId(u32::try_from(set).ok()?);
+        let old = self.db.source_root(root_id).source_root(&self.db);
+        let mut files = FileSet::default();
+        for f in old.iter() {
+            files.insert(f, old.path_for_file(&f)?.clone());
+        }
+        self.vfs
+            .set_file_contents(path.clone(), Some(text.as_bytes().to_vec()));
+        // The change is told to the database below; the file list's change log is not read.
+        self.vfs.take_changes();
+        let (id, _) = self.vfs.file_id(&path)?;
+        files.insert(id, path);
+        self.db
+            .set_file_source_root_with_durability(id, root_id, Durability::LOW);
+        self.db.set_source_root_with_durability(
+            root_id,
+            SourceRoot::new_local(files).into(),
+            Durability::LOW,
+        );
+        Some(id)
     }
 }
