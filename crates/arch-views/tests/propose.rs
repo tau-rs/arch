@@ -289,6 +289,39 @@ fn a_flat_service_like_zero2prod() {
     );
 }
 
+/// arch-design#29: the module that mounts the handlers holds an entry too, so zero2prod's
+/// `startup` is driving. The crate root has no area: a route registered there places only its
+/// handler.
+#[test]
+fn the_module_that_registers_a_route_is_driving() {
+    let mut b = Builder::new("bin:svc");
+    let home = b.func("routes", "src/routes.rs");
+    let health = b.func("health", "src/health.rs");
+    let startup = b.func("startup", "src/startup.rs");
+    b.link(&startup, Target::Item(home), LinkKind::Routes)
+        .link("svc::lib#mod", Target::Item(health), LinkKind::Routes)
+        .plain("config", "src/config.rs");
+    // `main` in the crate root makes the unit a hexagon and places nothing
+    b.0.entries.push(Entry {
+        item: "svc::lib#mod".into(),
+        kind: EntryKind::Main,
+        framework: None,
+        confidence: Confidence::Guessed,
+        witness: witness(),
+    });
+
+    use Column::*;
+    assert_eq!(
+        table(&propose_areas(&b.0)),
+        vec![
+            (Some(Driving), "health", vec!["src/health.rs"], 1),
+            (Some(Driving), "routes", vec!["src/routes.rs"], 2),
+            (Some(Driving), "startup", vec!["src/startup.rs"], 3),
+            (Some(Domain), "config", vec!["src/config.rs"], 1),
+        ]
+    );
+}
+
 #[test]
 fn a_unit_without_an_entry_is_layers_with_order_only() {
     let mut b = Builder::new("lib");

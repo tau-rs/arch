@@ -42,13 +42,12 @@ flowchart LR
 |---|---|
 | areas | one per top-level module of the root crate, a single file included; the crate root has none |
 | split | a module whose direct children mix driving and driven becomes one area per child |
-| side | first match: holds an entry → driving; touches an I/O external, or implements a unit trait an I/O-touching module implements → driven; else domain. Non-test code only |
+| side | first match: holds an entry → driving; touches an I/O external, or implements a unit trait an I/O-touching module implements → driven; else domain. Non-test code only. Both ends of a `routes` link hold an entry: the handler and the module that registers it (arch-design issue 29) |
 | order | byte-wise rank of the name within its side, from 1 |
 | rule | hexagon when the unit has an entry, layers (order only) otherwise |
 
-On the analyzer's facts for the two fixtures it reproduces 10 of 11 rows of each table in ADR 0029.
-The two misses are open design questions, implemented as the ADR text says: smallsvc `app` computes
-driven because logging counts as I/O (arch-design issue 28); zero2prod `startup` computes domain
-because registering routes is not holding an entry (arch-design issue 30).
+On the analyzer's facts it reproduces all 11 rows of ADR 0029's zero2prod table and 10 of 11 of
+smallsvc's: `app` computes driven because the analyzer still reports logging as the terminal, which
+arch-design issue 28 decided is not I/O (analyzer fix: issue #33).
 
 Not here yet: lints (names pending, issue #13), layouts, fold, Reach, overlays, impact (issue #4).

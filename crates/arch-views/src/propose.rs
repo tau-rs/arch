@@ -5,7 +5,8 @@
 //! - **Sides** (ADR 0027, hexagon units only), first match wins: the module holds an entry →
 //!   driving; it touches an I/O external, or implements a trait of the unit that an
 //!   I/O-touching module also implements → driven; otherwise domain. Non-test code only.
-//!   Entries are whatever the fact model lists (ADR 0028) plus the handler end of a `routes` link.
+//!   Entries are whatever the fact model lists (ADR 0028) plus both ends of a `routes` link: the
+//!   handler, and the module that registers it (arch-design#29).
 //! - **Split** (ADR 0027, decision 4): when a module's direct children give at least one driving
 //!   and one driven, each child is an area of its own, named by its bare name, prefixed with the
 //!   parent on a clash.
@@ -159,11 +160,13 @@ impl Groups {
             });
         }
         let entry_items = facts.entries.iter().map(|e| e.item.as_str());
-        let handlers = facts.links.iter().filter_map(|l| match (&l.kind, &l.to) {
-            (LinkKind::Routes, Target::Item(id)) => Some(id.as_str()),
+        // both ends of a `routes` link: the handler, and the module that mounts it
+        // (arch-design#29)
+        let routes = facts.links.iter().filter_map(|l| match (&l.kind, &l.to) {
+            (LinkKind::Routes, Target::Item(id)) => Some([l.from.as_str(), id.as_str()]),
             _ => None,
         });
-        for id in entry_items.chain(handlers) {
+        for id in entry_items.chain(routes.flatten()) {
             if let Some(item) = items.get(id) {
                 each(item, &mut |g| g.holds_entry = true);
             }
