@@ -95,6 +95,7 @@ flowchart LR
 | `areas/<name>.md` | text | one description per area, read into the context pack |
 | `rules` | `Rules` | TOML: `[[rule]] subject · must_not · targets · level`, `[lints] name = true/false or "block"/"warn"/"off"` (both provisional readings accepted until arch-design#4 decides); `Rules::v1_template()` is ADR 0006 |
 | `allows` | `Allows` | TOML: `[[allow]] site · rule · target? · reason · by · at?` |
+| `sessions/<id>/session.toml` | `Session` | the session record the scheduler resumes from (ADR 0015): `id · name · state · branch · worktree · base · created`, `[cursor] group · todo · fix_round · extra_rounds`, `[cursor.waiting] element · denied` while an ask or a deviation is open, `[[agents]] element · driver · session_id · transcript_path` (one driver session per element, arch-design#33). Announced in arch-design#117 |
 | `sessions/<id>/plan.toml` | `Plan` | elements (`ElementId` = `sha256(session · intention · site)[:8]`, label `E<n>`), groups, gates |
 | `sessions/<id>/thread.jsonl` | `ThreadEntry` per line | arch's own thread; driver session id and transcript path as pointers |
 | `sessions/<id>/records/NNNN-<kind>.toml` | `Record` | gate-output · judge-verdict · denial · override · resolution, each with witnesses |

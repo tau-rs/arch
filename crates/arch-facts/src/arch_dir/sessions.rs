@@ -1,11 +1,11 @@
-//! `sessions/<id>/` (ADR 0003): `plan.toml`, `thread.jsonl`, `records/`.
+//! `sessions/<id>/` (ADR 0003): `session.toml`, `plan.toml`, `thread.jsonl`, `records/`.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 use crate::model::Witness;
-use crate::session::{Plan, Record, RecordKind, SessionId, ThreadEntry, now};
+use crate::session::{Plan, Record, RecordKind, Session, SessionId, ThreadEntry, now};
 
 /// A session's folder on its branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +26,10 @@ impl SessionDir {
     /// The folder.
     pub fn root(&self) -> &Path {
         &self.root
+    }
+    /// `session.toml`: the session record (ADR 0015).
+    pub fn session_path(&self) -> PathBuf {
+        self.root.join("session.toml")
     }
     /// `plan.toml`.
     pub fn plan_path(&self) -> PathBuf {
@@ -60,6 +64,29 @@ impl SessionDir {
     /// Read `plan.toml`; `None` when the branch has no plan (ADR 0022: `plan · none`).
     pub fn read_plan(&self) -> Result<Option<Plan>> {
         let p = self.plan_path();
+        match std::fs::read_to_string(&p) {
+            Ok(s) => toml::from_str(&s)
+                .map(Some)
+                .map_err(|e| Error::format(&p, e.message())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Error::io(p, e)),
+        }
+    }
+
+    /// Write `session.toml`: Accept, then after every scheduler step (ADR 0015).
+    pub fn write_session(&self, session: &Session) -> Result<()> {
+        self.ensure()?;
+        let text = toml::to_string_pretty(session)
+            .map_err(|e| Error::Other(anyhow::anyhow!("session.toml: {e}")))?;
+        let p = self.session_path();
+        let tmp = self.root.join(".session.toml.tmp");
+        std::fs::write(&tmp, text).map_err(|e| Error::io(&tmp, e))?;
+        std::fs::rename(&tmp, &p).map_err(|e| Error::io(p, e))
+    }
+
+    /// Read `session.toml`; `None` before Accept.
+    pub fn read_session(&self) -> Result<Option<Session>> {
+        let p = self.session_path();
         match std::fs::read_to_string(&p) {
             Ok(s) => toml::from_str(&s)
                 .map(Some)
