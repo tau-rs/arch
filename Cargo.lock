@@ -192,6 +192,7 @@ dependencies = [
  "arch-forge",
  "arch-views",
  "pretty_assertions",
+ "tempfile",
  "thiserror",
 ]
 
