@@ -22,9 +22,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::cargo::UnitPlan;
 
-/// Where a note was taken in the pass: `[phase, file, sequence]`. Phase 0 is the walk over each
-/// file's syntax, phase 1 what is read off items afterwards (actix's attribute routes). Stable
-/// while the unit's declarations are: files and items are numbered by the module tree.
+/// Where a note was taken in its file: `[phase, visit, sequence]`. Phase 0 is the walk over the
+/// file's syntax, phase 1 what is read off its items afterwards (actix's attribute routes);
+/// `visit` counts the crates that walked the file before. Nothing in it depends on another
+/// file: [`derive`] places files by the unit's walk.
 pub type Order = [u32; 3];
 
 /// What one file's bodies contribute to facts that span files. Stored with the file's delta,
@@ -165,12 +166,27 @@ pub fn lock_packages(root: &Path) -> HashMap<String, (String, u32)> {
 /// Derive the facts that span files from every delta of a tree. `type_checked` is true when the
 /// links came from rust-analyzer: what cargo and the type-checked view establish is then
 /// `resolved`.
+///
+/// `walk` lists the unit's Rust files in the order the pass walked them, to place one file's
+/// notes against another's.
 pub fn derive(
     plan: &UnitPlan,
     lock: &HashMap<String, (String, u32)>,
     deltas: &[FileFacts],
+    walk: &[String],
     type_checked: bool,
 ) -> Assembled {
+    let mut walked: HashMap<(&str, u32), u32> = HashMap::new();
+    let mut visits: HashMap<&str, u32> = HashMap::new();
+    for (i, path) in walk.iter().enumerate() {
+        let v = visits.entry(path.as_str()).or_insert(0);
+        walked.insert((path.as_str(), *v), i as u32);
+        *v += 1;
+    }
+    let place = |path: &str, o: &Order| {
+        let file = walked.get(&(path, o[1])).copied().unwrap_or(u32::MAX);
+        (o[0], file, o[2])
+    };
     let mut deltas: Vec<&FileFacts> = deltas.iter().collect();
     deltas.sort_by(|a, b| a.path.cmp(&b.path));
     let notes: Vec<(String, Notes)> = deltas
@@ -217,10 +233,13 @@ pub fn derive(
             );
         }
     }
-    let mut routes: Vec<&RouteNote> = notes.iter().flat_map(|(_, n)| &n.routes).collect();
-    routes.sort_by_key(|r| r.order);
+    let mut routes: Vec<(&str, &RouteNote)> = notes
+        .iter()
+        .flat_map(|(p, n)| n.routes.iter().map(move |r| (p.as_str(), r)))
+        .collect();
+    routes.sort_by_key(|(p, r)| place(p, &r.order));
     let mut ports: BTreeMap<String, Port> = BTreeMap::new();
-    for r in routes {
+    for (_, r) in routes {
         entries.entry(r.handler.clone()).or_insert(Entry {
             item: r.handler.clone(),
             kind: EntryKind::Framework,
@@ -250,8 +269,12 @@ pub fn derive(
             .map(String::as_str)
             .collect(),
     };
-    let mut spawns: Vec<&SpawnNote> = notes.iter().flat_map(|(_, n)| &n.spawns).collect();
-    spawns.sort_by_key(|s| s.order);
+    let mut spawns: Vec<(&str, &SpawnNote)> = notes
+        .iter()
+        .flat_map(|(p, n)| n.spawns.iter().map(move |s| (p.as_str(), s)))
+        .collect();
+    spawns.sort_by_key(|(p, s)| place(p, &s.order));
+    let spawns: Vec<&SpawnNote> = spawns.into_iter().map(|(_, s)| s).collect();
     for (worker, witness, in_main) in workers.spawned(&spawns, &known) {
         entries.entry(worker.clone()).or_insert(Entry {
             item: worker,
@@ -417,14 +440,17 @@ pub fn derive(
             },
         );
     }
-    let mut hosts: BTreeMap<&str, &HostNote> = BTreeMap::new();
-    for h in notes.iter().flat_map(|(_, n)| &n.hosts) {
-        let first = hosts.entry(h.host.as_str()).or_insert(h);
-        if h.order < first.order {
-            *first = h;
+    let mut hosts: BTreeMap<&str, (&str, &HostNote)> = BTreeMap::new();
+    for (p, h) in notes
+        .iter()
+        .flat_map(|(p, n)| n.hosts.iter().map(move |h| (p.as_str(), h)))
+    {
+        let first = hosts.entry(h.host.as_str()).or_insert((p, h));
+        if place(p, &h.order) < place(first.0, &first.1.order) {
+            *first = (p, h);
         }
     }
-    for (host, h) in hosts {
+    for (host, (_, h)) in hosts {
         let id = format!("external:http:{host}");
         out.externals.push(External {
             id: id.clone(),
@@ -446,10 +472,10 @@ pub fn derive(
             },
         );
     }
-    if let Some((_, w)) = notes
+    if let Some((_, (_, w))) = notes
         .iter()
-        .filter_map(|(_, n)| n.tty.as_ref())
-        .min_by_key(|(o, _)| *o)
+        .filter_map(|(p, n)| Some((p.as_str(), n.tty.as_ref()?)))
+        .min_by_key(|(p, (o, _))| place(p, o))
     {
         let id = "external:tty:log".to_string();
         out.externals.push(External {

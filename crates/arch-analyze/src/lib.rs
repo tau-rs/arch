@@ -334,7 +334,7 @@ impl Analyzer {
         }
         let lock = assemble::lock_packages(&root);
         let type_checked = self.session.is_some();
-        tree_head.assembled = assemble::derive(&plan, &lock, &deltas, type_checked);
+        tree_head.assembled = assemble::derive(&plan, &lock, &deltas, &out.walk, type_checked);
 
         let hashes: Vec<String> = commits.iter().map(|c| c.hash.clone()).collect();
         store.put_commits(&commits)?;

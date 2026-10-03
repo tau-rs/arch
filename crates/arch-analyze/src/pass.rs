@@ -46,6 +46,8 @@ pub struct Output {
     pub files: BTreeMap<String, Parts>,
     /// Rust files walked.
     pub rust_files: BTreeSet<String>,
+    /// Rust files in the order they were walked; a file several crates walk is listed each time.
+    pub walk: Vec<String>,
     /// With rust-analyzer: the walked files it has no module for, by package, whose links stay
     /// guessed (a crate added since it loaded).
     pub unresolved: BTreeMap<String, Vec<String>>,
@@ -439,11 +441,18 @@ impl<'a> Unit<'a> {
         &self.items[i].f.item.id
     }
 
+    /// Which walk of its path file `fi` is: 0, or more when several crates walk one file.
+    fn walk_of(&self, fi: usize) -> u32 {
+        let path = &self.files[fi].path;
+        self.files[..fi].iter().filter(|f| &f.path == path).count() as u32
+    }
+
     /// Where the walk over file `fi` is: its next note's [`Order`].
     fn order(&mut self, fi: usize) -> Order {
+        let visit = self.walk_of(fi);
         let n = self.seq.entry(fi).or_insert(0);
         *n += 1;
-        [0, fi as u32, *n]
+        [0, visit, *n]
     }
 
     /// The module a node owned by `owner` resolves names in.
@@ -1954,6 +1963,10 @@ impl<'a> Unit<'a> {
 
     /// actix's attribute routes: `#[get("/x")] async fn h()`.
     fn attribute_routes(&mut self) {
+        let mut first: HashMap<usize, usize> = HashMap::new();
+        for (i, it) in self.items.iter().enumerate() {
+            first.entry(it.file).or_insert(i);
+        }
         for i in 0..self.items.len() {
             if self.kind(i) != ItemKind::Fn
                 || self.web_framework(self.items[i].krate) != Some(Framework::Actix)
@@ -1976,7 +1989,11 @@ impl<'a> Unit<'a> {
                 };
                 let name = format!("{} {route}", verb.to_uppercase());
                 self.routes.push(Route {
-                    order: [1, self.items[i].file as u32, i as u32],
+                    order: [
+                        1,
+                        self.walk_of(self.items[i].file),
+                        (i - first[&self.items[i].file]) as u32,
+                    ],
                     owner: i,
                     handler: i,
                     name,
@@ -1991,6 +2008,7 @@ impl<'a> Unit<'a> {
         self.attribute_routes();
         let mut out = Output::default();
         for f in &self.files {
+            out.walk.push(f.path.clone());
             out.rust_files.insert(f.path.clone());
             out.files.entry(f.path.clone()).or_default();
         }

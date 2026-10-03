@@ -115,3 +115,90 @@ fn a_delta_holds_its_files_items_and_links_and_notes_the_rest() {
             && l.to == Target::Table("outbox".into())));
     }
 }
+
+fn write(root: &Path, path: &str, text: &str) {
+    let p = root.join(path);
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    std::fs::write(p, text).unwrap();
+}
+
+#[test]
+fn a_package_s_new_module_leaves_another_package_s_deltas_unchanged() {
+    // Two packages of one unit; both write to the terminal, so which file's write witnesses the
+    // tty external depends on the order the pass walks them.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    write(
+        root,
+        "Cargo.toml",
+        "[workspace]\nmembers = [\"app\", \"core\"]\nresolver = \"2\"\n",
+    );
+    write(
+        root,
+        "core/Cargo.toml",
+        "[package]\nname = \"core\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    );
+    write(
+        root,
+        "core/src/lib.rs",
+        "pub fn hello() {\n    println!(\"core\");\n}\n",
+    );
+    write(
+        root,
+        "app/Cargo.toml",
+        "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\ncore = { path = \"../core\" }\n",
+    );
+    write(
+        root,
+        "app/src/main.rs",
+        "fn main() {\n    println!(\"app\");\n    core::hello();\n}\n",
+    );
+    let options = Options {
+        repo_name: Some("two".into()),
+        commits: Commits::None,
+        ..Default::default()
+    };
+    let mut store = Store::in_memory().unwrap();
+    let key = index(root, &options, &mut store).unwrap();
+    let core = delta(&store, &key, "core/src/lib.rs");
+    assert!(core.notes.is_some());
+    let witness = tty(&store, &key);
+
+    // A module more in each package, in turn: the other package's delta does not move, and the
+    // walk still decides which write witnesses the terminal.
+    write(
+        root,
+        "app/src/main.rs",
+        "mod extra;\n\nfn main() {\n    println!(\"app\");\n    core::hello();\n}\n",
+    );
+    write(root, "app/src/extra.rs", "pub fn more() {}\n");
+    let key = index(root, &options, &mut store).unwrap();
+    assert_eq!(delta(&store, &key, "core/src/lib.rs"), core);
+    assert_eq!(tty(&store, &key), witness);
+    let app = delta(&store, &key, "app/src/main.rs");
+
+    write(
+        root,
+        "core/src/lib.rs",
+        "mod extra;\n\npub fn hello() {\n    println!(\"core\");\n}\n",
+    );
+    write(root, "core/src/extra.rs", "pub fn more() {}\n");
+    let key = index(root, &options, &mut store).unwrap();
+    assert_eq!(delta(&store, &key, "app/src/main.rs"), app);
+    assert_eq!(tty(&store, &key), witness);
+}
+
+/// The file whose write witnesses the terminal external.
+fn tty(store: &Store, key: &TreeKey) -> String {
+    let f = store.facts(key).unwrap().unwrap();
+    match f
+        .externals
+        .into_iter()
+        .find(|e| e.kind == PortKind::Tty)
+        .unwrap()
+        .witness
+    {
+        Witness::Span { file, .. } | Witness::Declared { file, .. } => file,
+        Witness::Tool { .. } => panic!("a write is witnessed in a file"),
+    }
+}
