@@ -119,3 +119,19 @@ fn committing_outside_a_git_repository_says_so_before_writing_anything() {
     assert!(err.to_string().contains("--no-commit"));
     assert!(!repo.path().join(".arch").exists());
 }
+
+/// ADR 0029, "Result on smallsvc", computed column: `fixtures/expected/smallsvc/areas.toml`,
+/// byte for byte, and the same bytes on a second run. Not the fixture's own `areas.toml`, which
+/// carries seven hand edits (arch-fixtures #3).
+#[test]
+fn init_reproduces_adr_0029_on_smallsvc_byte_for_byte() {
+    let expected =
+        std::fs::read_to_string(common::repo_root().join("fixtures/expected/smallsvc/areas.toml"))
+            .unwrap();
+    for _ in 0..2 {
+        let repo = bare_copy();
+        init(repo.path(), &InitOptions { commit: false }).unwrap();
+        let written = std::fs::read_to_string(repo.path().join(".arch/areas.toml")).unwrap();
+        assert_eq!(written, expected);
+    }
+}

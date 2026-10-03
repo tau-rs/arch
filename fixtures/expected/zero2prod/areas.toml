@@ -1,0 +1,68 @@
+rule = "hexagon"
+main_bin = "zero2prod"
+
+[[area]]
+name = "issue_delivery_worker"
+paths = ["src/issue_delivery_worker.rs"]
+side = "driving"
+order = 1
+
+[[area]]
+name = "routes"
+paths = ["src/routes/**"]
+side = "driving"
+order = 2
+
+[[area]]
+name = "startup"
+paths = ["src/startup.rs"]
+side = "driving"
+order = 3
+
+[[area]]
+name = "configuration"
+paths = ["src/configuration.rs"]
+side = "domain"
+order = 1
+
+[[area]]
+name = "domain"
+paths = ["src/domain/**"]
+side = "domain"
+order = 2
+
+[[area]]
+name = "session_state"
+paths = ["src/session_state.rs"]
+side = "domain"
+order = 3
+
+[[area]]
+name = "telemetry"
+paths = ["src/telemetry.rs"]
+side = "domain"
+order = 4
+
+[[area]]
+name = "utils"
+paths = ["src/utils.rs"]
+side = "domain"
+order = 5
+
+[[area]]
+name = "authentication"
+paths = ["src/authentication/**"]
+side = "driven"
+order = 1
+
+[[area]]
+name = "email_client"
+paths = ["src/email_client.rs"]
+side = "driven"
+order = 2
+
+[[area]]
+name = "idempotency"
+paths = ["src/idempotency/**"]
+side = "driven"
+order = 3

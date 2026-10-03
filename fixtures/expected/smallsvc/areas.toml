@@ -1,0 +1,68 @@
+rule = "hexagon"
+main_bin = "orderly"
+
+[[area]]
+name = "http"
+paths = ["src/adapters/http/**"]
+side = "driving"
+order = 1
+
+[[area]]
+name = "worker"
+paths = ["src/worker.rs"]
+side = "driving"
+order = 2
+
+[[area]]
+name = "app"
+paths = ["src/app/**"]
+side = "domain"
+order = 1
+
+[[area]]
+name = "config"
+paths = ["src/config.rs"]
+side = "domain"
+order = 2
+
+[[area]]
+name = "domain"
+paths = ["src/domain/**"]
+side = "domain"
+order = 3
+
+[[area]]
+name = "ports"
+paths = ["src/ports/**"]
+side = "domain"
+order = 4
+
+[[area]]
+name = "carrier"
+paths = ["src/adapters/carrier/**"]
+side = "driven"
+order = 1
+
+[[area]]
+name = "email"
+paths = ["src/adapters/email/**"]
+side = "driven"
+order = 2
+
+[[area]]
+name = "memory"
+paths = ["src/adapters/memory/**"]
+side = "driven"
+order = 3
+
+[[area]]
+name = "postgres"
+paths = ["src/adapters/postgres/**"]
+side = "driven"
+order = 4
+
+[[area]]
+name = "stripe"
+paths = ["src/adapters/stripe/**"]
+side = "driven"
+order = 5
