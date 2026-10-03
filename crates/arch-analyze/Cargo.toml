@@ -13,3 +13,12 @@ workspace = true
 [dependencies]
 arch-facts.workspace = true
 anyhow.workspace = true
+ra_ap_syntax = "=0.0.356"
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+jsonschema.workspace = true
