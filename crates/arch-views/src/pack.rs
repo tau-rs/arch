@@ -286,10 +286,7 @@ fn findings(out: &mut String, all: &[Finding]) {
     }
     let allowed = all.len() - open.len();
     if allowed > 0 {
-        let _ = writeln!(
-            out,
-            "\n{allowed} more covered by `.arch/allows`, not listed."
-        );
+        let _ = writeln!(out, "\n{allowed} covered by `.arch/allows`, not listed.");
     }
     out.push('\n');
 }

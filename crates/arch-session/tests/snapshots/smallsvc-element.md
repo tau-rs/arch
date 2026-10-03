@@ -78,7 +78,7 @@ A subject or a target is a side or an area name; `externals` is everything outsi
 
 None.
 
-2 more covered by `.arch/allows`, not listed.
+2 covered by `.arch/allows`, not listed.
 
 ## Area descriptions
 
