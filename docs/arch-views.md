@@ -46,8 +46,8 @@ flowchart LR
 | order | byte-wise rank of the name within its side, from 1 |
 | rule | hexagon when the unit has an entry, layers (order only) otherwise |
 
-On the analyzer's facts it reproduces all 11 rows of ADR 0029's zero2prod table and 10 of 11 of
-smallsvc's: `app` computes driven because the analyzer still reports logging as the terminal, which
-arch-design issue 28 decided is not I/O (analyzer fix: issue #33).
+On the analyzer's facts it reproduces both tables in ADR 0029, every row; the files it writes are
+pinned in `fixtures/expected/` (smallsvc in `arch-api`'s init tests, zero2prod in
+`scripts/check-zero2prod.sh`).
 
 Not here yet: lints (names pending, issue #13), layouts, fold, Reach, overlays, impact (issue #4).
