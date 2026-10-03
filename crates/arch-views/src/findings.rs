@@ -17,13 +17,14 @@
 use std::collections::BTreeMap;
 
 use arch_facts::{
-    Allow, Allows, Areas, Confidence, External, Facts, Item, Level, Link, LinkKind, Port, PortKind,
-    Rule, Rules, Side, Target, Witness,
+    Allow, Allows, Areas, Confidence, External, Facts, Item, Level, Link, LinkKind, Port, Rule,
+    Rules, Side, Target, Witness,
 };
 use serde::Serialize;
 
 use crate::Error;
 use crate::placement::{Placement, Placements, side_name};
+use crate::propose::{is_io, is_test_code};
 
 /// The name `.arch/rules` uses for everything outside the unit.
 const EXTERNALS: &str = "externals";
@@ -228,18 +229,6 @@ fn far_end(
             (port.side == Side::Driven && is_io(port.kind)).then(|| outside(id))
         }
     }
-}
-
-/// I/O kinds (ADR 0027): everything but libraries and the crate's own public surface.
-fn is_io(kind: PortKind) -> bool {
-    !matches!(kind, PortKind::Crate | PortKind::Pub | PortKind::Declared)
-}
-
-fn is_test_code(item: &Item) -> bool {
-    item.flags.cfg.as_deref().is_some_and(|cfg| {
-        cfg.split(|c: char| !c.is_alphanumeric())
-            .any(|w| w == "test")
-    })
 }
 
 fn names(place: &Placement, name: &str) -> bool {
