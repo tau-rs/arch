@@ -99,13 +99,14 @@ impl Session {
         Some(rel.to_string_lossy().replace('\\', "/"))
     }
 
-    /// Tell rust-analyzer a file's new text. Returns false when it does not know the file.
-    pub fn file_changed(&mut self, rel: &str, text: String) -> bool {
+    /// Tell rust-analyzer a file's new text, or `None` when the file is gone. Returns false when
+    /// it does not know the file.
+    pub fn file_changed(&mut self, rel: &str, text: Option<String>) -> bool {
         let Some(id) = self.file_id(rel) else {
             return false;
         };
         let mut change = ChangeWithProcMacros::default();
-        change.change_file(id, Some(text));
+        change.change_file(id, text);
         self.db.apply_change(change);
         true
     }

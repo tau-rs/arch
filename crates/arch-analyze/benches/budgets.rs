@@ -3,7 +3,7 @@
 //! | benchmark | budget | what is measured |
 //! |---|---|---|
 //! | `first_index_cold` | < 5 s | no cache; `target/` already built by a prior `cargo check`; from opening the analyzer to the first complete facts at `resolved` confidence |
-//! | `recompute_one_file` | < 500 ms | one source file changed on disk; from the change notice to the new facts |
+//! | `recompute_one_file` | < 500 ms | one source file saved; from the save on disk, through the watcher's debounce, to the new facts |
 //!
 //! Runs on a copy of `repos/smallsvc` from the fixtures pin (`scripts/fetch-fixtures.sh`), with
 //! `CARGO_TARGET_DIR` pointing at a directory this benchmark builds once, outside the timing.
@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
+use arch_analyze::watch::{Debounce, Watcher};
 use arch_analyze::{Analyzer, Commits, Depth, Options};
 use arch_facts::{Confidence, Store};
 
@@ -93,15 +94,29 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // Watch before the save, outside the timing, and let the backend settle.
+    let watcher = Watcher::new(std::slice::from_ref(&repo), Debounce::default()).unwrap();
+    while watcher.recv_timeout(Duration::from_millis(300)).is_some() {}
     let file = Path::new("src/app/pay.rs");
     let mut text = std::fs::read_to_string(repo.join(file)).unwrap();
     text.push_str("\npub fn added_by_the_benchmark(order: &crate::domain::Order) -> usize { order.lines.len() }\n");
-    std::fs::write(repo.join(file), text).unwrap();
     let started = Instant::now();
-    analyzer.file_changed(file).unwrap();
-    let key = analyzer.index(&mut store).unwrap();
+    std::fs::write(repo.join(file), text).unwrap();
+    let Some(batch) = watcher.recv_timeout(Duration::from_secs(10)) else {
+        eprintln!("the watcher reported no batch for the save");
+        return ExitCode::FAILURE;
+    };
+    let events = analyzer.apply(&batch, &mut store).unwrap();
     let recompute = started.elapsed();
-    let facts = store.facts(&key).unwrap().unwrap();
+    let Some(arch_facts::Event::FactsUpdated { tree: key, .. }) = events.last() else {
+        eprintln!("the batch gave no FactsUpdated: {events:?}");
+        return ExitCode::FAILURE;
+    };
+    if !batch.changes.iter().any(|c| c.path == file) {
+        eprintln!("the batch misses the saved file: {batch:?}");
+        return ExitCode::FAILURE;
+    }
+    let facts = store.facts(key).unwrap().unwrap();
     let seen = facts
         .items
         .iter()

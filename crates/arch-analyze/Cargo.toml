@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 arch-facts.workspace = true
 anyhow.workspace = true
+notify = "8"
 ra_ap_syntax = "=0.0.356"
 thiserror.workspace = true
 serde.workspace = true
