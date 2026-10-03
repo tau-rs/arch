@@ -265,7 +265,7 @@ fn migrations_name_the_tables_and_outbox_is_a_queue() {
 }
 
 #[test]
-fn externals_are_the_database_three_http_apis_the_log_and_the_crates_touched() {
+fn externals_are_the_database_three_http_apis_and_the_crates_touched() {
     let f = facts();
     let ids: BTreeSet<&str> = f.externals.iter().map(|e| e.id.as_str()).collect();
     for id in [
@@ -273,12 +273,17 @@ fn externals_are_the_database_three_http_apis_the_log_and_the_crates_touched() {
         "external:http:stripe",
         "external:http:carrier",
         "external:http:email",
-        "external:tty:log",
         "external:crate:sqlx",
         "external:crate:axum",
+        "external:crate:tracing",
     ] {
         assert!(ids.contains(id), "{id} in {ids:?}");
     }
+    // smallsvc logs only through `tracing`: a library call, not terminal I/O (arch-design#28).
+    assert!(
+        f.externals.iter().all(|e| e.kind != PortKind::Tty),
+        "{ids:?}"
+    );
     let pg = f
         .externals
         .iter()
