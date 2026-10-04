@@ -51,7 +51,7 @@ pub struct Output {
     /// The packages whose crates walked each Rust file, by index into the plan's packages.
     pub owners: BTreeMap<String, BTreeSet<usize>>,
     /// With rust-analyzer: the walked files it has no module for, by package, whose links stay
-    /// guessed (a crate added since it loaded).
+    /// guessed (a module a `cfg` compiles out).
     pub unresolved: BTreeMap<String, Vec<String>>,
 }
 

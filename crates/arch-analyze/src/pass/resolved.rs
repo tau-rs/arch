@@ -70,7 +70,7 @@ impl Unit<'_> {
         };
 
         // A file is resolved when rust-analyzer has it in a crate's module tree: one it holds
-        // outside every crate (a crate added since it loaded) keeps its guessed links.
+        // outside every crate (a module a `cfg` compiles out) keeps its guessed links.
         let (loaded, unresolved): (Vec<_>, Vec<_>) = (0..self.files.len())
             .map(|fi| {
                 let id = session

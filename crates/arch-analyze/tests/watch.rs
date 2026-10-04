@@ -7,7 +7,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use arch_analyze::watch::{Batch, Change, Debounce, Watcher};
-use arch_analyze::{Analyzer, Commits, Depth, Options};
+use arch_analyze::{Analyzer, Commits, Depth, Options, Recompute};
 use arch_facts::{Attribution, ContentHash, Event, Store};
 
 /// Long enough for a loaded CI runner to deliver a batch; a passing run never waits this long.
@@ -241,6 +241,36 @@ fn a_batch_applied_to_the_analyzer_updates_the_facts_and_a_removed_file_drops_ou
     let facts = store.facts(tree).unwrap().unwrap();
     assert!(facts.items.iter().any(|i| i.name == "added"));
     assert!(!facts.items.iter().any(|i| i.name == "two"));
+}
+
+#[test]
+fn a_change_to_what_cargo_reads_alone_is_a_batch_and_reads_the_plan_again() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (repo, _) = repo_with_worktree(tmp.path());
+    let options = Options {
+        commits: Commits::None,
+        ..Options::default()
+    };
+    let mut analyzer = Analyzer::open(&repo, options).unwrap();
+    let mut store = Store::in_memory().unwrap();
+    analyzer.index(&mut store).unwrap();
+    let watcher = watch(std::slice::from_ref(&repo));
+
+    // `cargo update`: only the lock file changes. Then cargo's configuration appears, in a
+    // hidden directory created after the watch started.
+    for (path, text) in [
+        (
+            "Cargo.lock",
+            "version = 4\n\n[[package]]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        ),
+        (".cargo/config.toml", "[build]\njobs = 1\n"),
+    ] {
+        write(&repo, path, text);
+        let batch = watcher.recv_timeout(DELIVERY).expect("one batch");
+        assert_eq!(paths(&batch), [path]);
+        analyzer.apply(&batch, &mut store).unwrap();
+        assert_eq!(analyzer.last_recompute(), Some(&Recompute::Unit), "{path}");
+    }
 }
 
 #[test]
