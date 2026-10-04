@@ -13,15 +13,19 @@
 //! The folder leaves the branch before the merge so main's tree never holds it (ADR 0003): the
 //! merged head is one commit past the reviewed one. Every step can be re-run: a merge that the
 //! forge refuses (checks still running on that commit) leaves the capture in the cache, and the
-//! next `merge` goes on from it.
+//! next `merge` goes on from it. A merge the forge calls not mergeable right after the push (it is
+//! still computing mergeability) is retried a few times first ([`SETTLE`]).
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use arch_facts::{
     ArchDir, Archive, Plan, RecordKind, Session, SessionId, SessionState, ThreadAuthor,
     ThreadEntry, ThreadEvent, Verdict,
 };
-use arch_forge::{CheckState, Forge, NewRequest, Request, RequestState, Strategy, summary};
+use arch_forge::{
+    CheckState, Forge, ForgeError, NewRequest, Request, RequestState, Strategy, summary,
+};
 
 use crate::engine::commit_folder;
 use crate::machine::{Trigger, next};
@@ -261,7 +265,7 @@ pub fn merge(
                 head_sha: head,
                 ..request.clone()
             };
-            let done = forge.merge(&request, strategy)?;
+            let done = merge_settled(forge, &request, strategy, id)?;
             write(
                 &merged_at,
                 &format!("{} {}", done.sha, strategy_word(strategy)),
@@ -319,6 +323,45 @@ pub fn merge(
         worktree: worktree.map(Path::to_path_buf),
         branch,
     })
+}
+
+/// How long to wait before each retry of a merge the forge calls not mergeable. Right after a
+/// push GitHub is still computing the request's mergeability and answers 405 (seen in #6's real
+/// run, the push being the archive commit).
+pub const SETTLE: [Duration; 4] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+];
+
+/// `Forge::merge`, retried over [`SETTLE`] while the forge answers 405 "not mergeable".
+fn merge_settled(
+    forge: &dyn Forge,
+    request: &Request,
+    strategy: Strategy,
+    id: &SessionId,
+) -> Result<arch_forge::Merged, Error> {
+    let mut waits = SETTLE.iter();
+    loop {
+        match forge.merge(request, strategy) {
+            Err(ForgeError::Rejected {
+                status: 405,
+                message,
+            }) if message.contains("not mergeable") => match waits.next() {
+                Some(wait) => std::thread::sleep(*wait),
+                None => {
+                    return Err(Error::NotMergeable(format!(
+                        "{} #{} is not mergeable: the forge is still checking the last push, \
+                             or it conflicts with its base; run `arch session merge {id}` again",
+                        forge.request_word(),
+                        request.number
+                    )));
+                }
+            },
+            other => return Ok(other?),
+        }
+    }
 }
 
 /// The strategy to merge with: the one asked for when the repo allows it, else the repo's only

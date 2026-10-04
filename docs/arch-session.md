@@ -159,6 +159,9 @@ flowchart TD
   checks refuses the merge until they pass on it. `merge` says so and can be run again.
 - **Every step can be re-run.** The capture waits in the cache, so a refused merge loses nothing;
   once the forge has merged, the merge commit waits there too until the note is written.
+- **A merge the forge calls "not mergeable" is retried** after 1, 2, 4 and 8 s (`review::SETTLE`):
+  right after the archive commit's push GitHub is still computing mergeability and answers 405
+  (seen in the real run). After that, `merge` says so and can be run again.
 - **The strategy is the repo's** (ADR 0016): the only one it allows, or the one named with
   `--strategy` among those it allows. GitHub has no default, so with several the person names one.
 - **The note is on the merge commit the forge reports** and is not pushed: pushing
@@ -258,4 +261,5 @@ experiments/session-real.sh LEBOCQTitouan/arch-scratch "add a refund flow"
   notes). Also: the planner and `new --delegate` in one process over two groups; an ask answered
   in a second process; a gate failed three times, then `decide one-more`; `accept` without
   `--delegate`; `merge` refused on red checks, then for naming no strategy among three, then run
-  again with `--strategy squash` from the first attempt's capture.
+  again with `--strategy squash` from the first attempt's capture, through one 405 "not
+  mergeable" retried.

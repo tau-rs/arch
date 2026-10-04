@@ -709,7 +709,8 @@ fn merge_waits_for_red_checks_names_the_strategies_and_can_be_run_again() {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    // Named: merged and archived, from the capture the first attempt left in the cache.
+    // Named: merged (after one "not mergeable" while the forge settles) and archived, from the
+    // capture the first attempt left in the cache.
     let sha = fake_merge_commit(&w, &id);
     let forge = forge_dir(
         &w,
@@ -722,6 +723,9 @@ fn merge_waits_for_red_checks_names_the_strategies_and_can_be_run_again() {
               "status": 200, "json": { "statuses": [] } },
             { "method": "GET", "path": "/repos/fake/repo", "status": 200,
               "json": { "allow_merge_commit": true, "allow_squash_merge": true, "allow_rebase_merge": true } },
+            // Right after the archive commit's push GitHub is still computing mergeability.
+            { "method": "PUT", "path": "/repos/fake/repo/pulls/7/merge", "status": 405,
+              "json": { "message": "Pull Request is not mergeable" } },
             { "method": "PUT", "path": "/repos/fake/repo/pulls/7/merge", "status": 200,
               "json": { "sha": sha, "merged": true } },
         ]),

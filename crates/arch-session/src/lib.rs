@@ -88,6 +88,9 @@ pub enum Error {
     /// named.
     #[error("{0}")]
     Strategy(String),
+    /// The forge still refuses the merge after [`review::SETTLE`].
+    #[error("{0}")]
+    NotMergeable(String),
     /// A door that a later issue opens.
     #[error("{what} is not there yet ({issue})")]
     NotYet {
