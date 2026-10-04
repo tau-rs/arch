@@ -138,7 +138,7 @@ never block (ADR 0009, ADR 0010).
 |---|---|---|
 | unit, crates | `cargo metadata --no-deps`: first `[[bin]]` (default members first), else the lib; `areas.toml` `main_bin` overrides; closure = the package's lib and workspace libs reached by path dependencies | targets of other packages are listed, never walked |
 | items | every item in the syntax tree of a file reachable through `mod` declarations, with `parent` for associated items | items a macro generates |
-| `calls`, `constructs`, `uses-type`, `holds`, `implements`, `refines`, `matches-on`, `re-exports`, `refers-to` | a written path followed through the unit's modules and `use` declarations (globs up to five levels) | names std's prelude or a glob over an external crate brings in |
+| `calls`, `constructs`, `uses-type`, `holds`, `implements`, `refines`, `matches-on`, `re-exports`, `refers-to` | a written path followed through the unit's modules and `use` declarations (globs up to five levels); a crate sees only the unit packages its package depends on, transitively, as rustc does: their libraries, their impls, their methods | names std's prelude or a glob over an external crate brings in |
 | `calls`, `calls-port`, `reads` (fields) through a method or field | only when the receiver's type is written: `self`, a field, a parameter, a `let` with a type or a constructor call | receivers whose type is inferred |
 | links inside macro arguments | the arguments are parsed again as a function body | arguments that are not expressions |
 | `calls-out`, `inherits`, `decorates`, `expands` to a crate | a path whose first segment is a declared dependency; the external is the cargo package | items reached through a re-export in another crate are named by the path as written |
@@ -169,14 +169,17 @@ them (`const fn` bodies and `const`/`static` initializers kept).
 |---|---|
 | Rust files whose fingerprint is unchanged (bodies, comments) | those files only (`Recompute::Files`); every other delta is carried forward under its new key |
 | files that hold no Rust (a migration, a README) | nothing is walked; a migration's tables are read again |
-| a fingerprint, or adds or removes a Rust file | the unit (`Recompute::Unit`) |
+| a fingerprint | the packages whose crates walk the file and the unit's packages that depend on them, transitively (`Recompute::Packages`); every other package's deltas are carried forward. A crate sees only the packages it depends on, so the change reaches no other package's facts |
+| adds or removes a Rust file | the unit (`Recompute::Unit`) |
 | a manifest, `Cargo.lock`, `.cargo/config.toml`, or `areas.toml`'s `main_bin` or `target` | the unit, after `cargo metadata` runs again and, but for `main_bin`, rust-analyzer loads again; otherwise the unit plan is reused |
 
-Only the changed files are walked and resolved, but the unit is still read whole, since its
-declarations resolve their names. `tests/incremental.rs` (`incremental_equals_cold`) proves the
-result equals a cold analysis byte for byte: scripted saves of each kind and their undo, and the
-same saves in every order, at syntax depth in `cargo test` and at resolved depth in release in
-CI's budgets job.
+Only those files are walked and resolved, but the unit is still read whole, since its
+declarations resolve their names. A watcher batch (`apply`) reads and hashes again only the files
+it names and files the last index did not see; `index` alone reads every file. Each walked file
+keeps its fingerprint while its content is unchanged. `tests/incremental.rs`
+(`incremental_equals_cold`) proves the result equals a cold analysis byte for byte: scripted saves
+of each kind and their undo, and the same saves in every order, on smallsvc and on a four-package
+workspace, at syntax depth in `cargo test` and at resolved depth in release in CI's budgets job.
 
 Each delta is stored under its facts key (ADR 0002): `hash(path · content hash · package id)`.
 The package id is computed in-process (`package`), in git's object format, from the bytes `index`

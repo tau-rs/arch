@@ -125,9 +125,13 @@ pub fn index(repo: &Path, options: &Options, store: &mut Store) -> Result<TreeKe
 /// How an [`Analyzer::index`] recomputed the facts (ADR 0002).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Recompute {
-    /// The whole unit was analysed: the first index, or a change to a declaration, a manifest,
-    /// or the set of Rust files.
+    /// The whole unit was analysed: the first index, or a change to a manifest or to the set of
+    /// Rust files.
     Unit,
+    /// A declaration changed: these packages were analysed (names, sorted), the changed file's
+    /// and the unit's packages that depend on it, with any other changed file. Every other
+    /// package's deltas were carried forward under their new keys.
+    Packages(Vec<String>),
     /// Only these files were analysed: the save changed function bodies, or files that hold no
     /// Rust. Every other file's delta was carried forward under its new key.
     Files(Vec<PathBuf>),
@@ -136,16 +140,28 @@ pub enum Recompute {
 /// What the last index saw, for the next one to recompute only what a save changed.
 #[derive(Debug)]
 struct Last {
-    /// Every file: its content hash and the key its facts are under.
-    files: HashMap<PathBuf, (ContentHash, FactsKey)>,
+    /// Every file, as it was indexed.
+    files: HashMap<PathBuf, Seen>,
     /// The declaration fingerprint of every Rust file the pass walked (`decl`).
     decls: HashMap<String, String>,
+    /// The packages whose crates walked each Rust file, by index into the plan's packages.
+    owners: BTreeMap<String, BTreeSet<usize>>,
+}
+
+/// One file as the last index saw it.
+#[derive(Debug)]
+struct Seen {
+    hash: ContentHash,
+    blob: package::Blob,
+    /// The key its facts are under.
+    key: FactsKey,
 }
 
 /// An analyzer kept open on one repository. With [`Depth::Resolved`] it holds rust-analyzer
 /// loaded, so after [`Analyzer::file_changed`] the next [`Analyzer::index`] is incremental
 /// (spec §5: one-file recompute < 500 ms). It also remembers what it last indexed: a save that
-/// changes function bodies only re-analyses the changed files (ADR 0002).
+/// changes function bodies only re-analyses the changed files, one that changes a declaration
+/// the packages it reaches (ADR 0002).
 #[derive(Debug)]
 pub struct Analyzer {
     root: PathBuf,
@@ -266,7 +282,9 @@ impl Analyzer {
 
     /// Apply a watcher batch of this analyzer's worktree: tell it each changed file, index into
     /// `store`, and return the events: one `FilesChanged` per writer, then `FactsUpdated` naming
-    /// the changed files.
+    /// the changed files. Only the files the batch names, and files the last index did not see,
+    /// are read and hashed again: the watcher reports every change (a dropped event gives a
+    /// batch naming every file).
     pub fn apply(&mut self, batch: &watch::Batch, store: &mut Store) -> Result<Vec<Event>, Error> {
         if batch.worktree != self.root {
             return Err(Error::Unit {
@@ -277,7 +295,8 @@ impl Analyzer {
         for c in &batch.changes {
             self.file_changed(&c.path)?;
         }
-        let tree = self.index(store)?;
+        let named: BTreeSet<PathBuf> = batch.changes.iter().map(|c| c.path.clone()).collect();
+        let tree = self.index_files(store, Some(&named))?;
         let mut events = batch.files_changed();
         events.push(Event::FactsUpdated {
             tree,
@@ -291,10 +310,22 @@ impl Analyzer {
     ///
     /// Against what the analyzer last indexed: when the Rust files that changed changed function
     /// bodies only (their declaration fingerprint is the same), only the changed files are
-    /// analysed and every other file's delta is carried forward under its new key; otherwise the
-    /// whole unit is. Either way the facts are what a cold analysis gives
+    /// analysed and every other file's delta is carried forward under its new key. When a
+    /// declaration changed, the packages whose crates walk the file are analysed, with the unit's
+    /// packages depending on them; a change to a manifest or to the set of Rust files analyses
+    /// the whole unit. Either way the facts are what a cold analysis gives
     /// (`tests/incremental.rs`). [`Analyzer::last_recompute`] says which it was.
     pub fn index(&mut self, store: &mut Store) -> Result<TreeKey, Error> {
+        self.index_files(store, None)
+    }
+
+    /// [`Analyzer::index`], reading and hashing again only the files in `named` and the files the
+    /// last index did not see; every file when `named` is `None`.
+    fn index_files(
+        &mut self,
+        store: &mut Store,
+        named: Option<&BTreeSet<PathBuf>>,
+    ) -> Result<TreeKey, Error> {
         let root = self.root.clone();
         let options = self.options.clone();
         let unit_err = |reason: String| Error::Unit {
@@ -312,6 +343,14 @@ impl Analyzer {
         let mut blobs: Vec<(PathBuf, package::Blob)> = Vec::with_capacity(files.len());
         let mut texts: HashMap<PathBuf, String> = HashMap::new();
         for f in &files {
+            if let Some(named) = named
+                && !named.contains(f)
+                && let Some(seen) = self.last.as_ref().and_then(|l| l.files.get(f))
+            {
+                hashed.push((f.clone(), seen.hash.clone()));
+                blobs.push((f.clone(), seen.blob.clone()));
+                continue;
+            }
             let path = root.join(f);
             let io = |source| Error::Io {
                 path: path.clone(),
@@ -385,7 +424,7 @@ impl Analyzer {
         let only = if plan_changed {
             None
         } else {
-            self.changed_bodies(&hashed, &texts, store)?
+            self.scope(&plan, &hashed, &texts, store)?
         };
 
         let name = options
@@ -456,11 +495,12 @@ impl Analyzer {
         for (path, hash) in &hashed {
             let rel = path.to_string_lossy().replace('\\', "/");
             if let Some(only) = &only
-                && !only.contains(&rel)
+                && !only.holds(&rel, out.owners.get(&rel))
             {
-                // Unchanged: its delta is carried forward (checked present by `changed_bodies`).
+                // Unchanged and out of reach: its delta is carried forward (checked present by
+                // `scope`).
                 let last = self.last.as_ref().expect("a last index to compare with");
-                let (_, old) = &last.files[path];
+                let old = &last.files[path].key;
                 deltas.push(store.file_facts(old)?.expect("checked present"));
                 continue;
             }
@@ -506,29 +546,53 @@ impl Analyzer {
         let branch = in_git.then(|| git::current_branch(&root)).flatten();
         store.set_worktree(&root, &key, head.as_deref(), branch.as_deref())?;
 
-        // Remember what was indexed, for the next save.
-        let mut decls = self.last.take().map(|l| l.decls).unwrap_or_default();
-        if only.is_none() {
-            decls.clear();
-        }
-        for rel in &out.rust_files {
-            if only.as_ref().is_none_or(|o| o.contains(rel))
-                && let Some(text) = texts.get(Path::new(rel))
-            {
-                decls.insert(rel.clone(), decl::fingerprint(text));
+        // Remember what was indexed, for the next save. A file whose content is what the last
+        // index saw keeps its fingerprint.
+        let last = self.last.take();
+        let mut decls = HashMap::new();
+        for (path, hash) in &hashed {
+            let rel = path.to_string_lossy().replace('\\', "/");
+            if !out.rust_files.contains(&rel) {
+                continue;
             }
+            let kept = last
+                .as_ref()
+                .filter(|l| l.files.get(path).is_some_and(|s| s.hash == *hash))
+                .and_then(|l| l.decls.get(&rel));
+            let fingerprint = match (kept, texts.get(path)) {
+                (Some(f), _) => f.clone(),
+                (None, Some(text)) => decl::fingerprint(text),
+                (None, None) => match std::fs::read_to_string(root.join(path)) {
+                    Ok(text) => decl::fingerprint(&text),
+                    Err(_) => continue,
+                },
+            };
+            decls.insert(rel, fingerprint);
         }
         self.last = Some(Last {
             files: hashed
-                .iter()
+                .into_iter()
+                .zip(blobs)
                 .zip(keys)
-                .map(|((p, h), k)| (p.clone(), (h.clone(), k)))
+                .map(|(((p, hash), (_, blob)), key)| (p, Seen { hash, blob, key }))
                 .collect(),
             decls,
+            owners: out.owners,
         });
         self.recompute = Some(match only {
             None => Recompute::Unit,
-            Some(o) => Recompute::Files(o.into_iter().map(PathBuf::from).collect()),
+            Some(o) if o.packages.is_empty() => {
+                Recompute::Files(o.files.into_iter().map(PathBuf::from).collect())
+            }
+            Some(o) => {
+                let mut names: Vec<String> = o
+                    .packages
+                    .iter()
+                    .map(|p| plan.packages[*p].name.clone())
+                    .collect();
+                names.sort();
+                Recompute::Packages(names)
+            }
         });
         Ok(key)
     }
@@ -544,15 +608,17 @@ impl Analyzer {
         self.load_error = load_error.map(|e| format!("{e} (loading again after {why})"));
     }
 
-    /// The files to analyse when the save since the last index changed function bodies only,
-    /// or files that hold no Rust; `None` when the whole unit must be: no last index, a Rust
-    /// file added or removed, a declaration changed, or a delta to carry is gone from `store`.
-    fn changed_bodies(
+    /// What to analyse after the save since the last index: the changed files, and when one of
+    /// them changed a declaration, every file of the packages whose crates walk it and of the
+    /// unit's packages depending on those; `None` when the whole unit must be: no last index, a
+    /// Rust file added or removed, or a delta to carry is gone from `store`.
+    fn scope(
         &self,
+        plan: &cargo::UnitPlan,
         hashed: &[(PathBuf, ContentHash)],
         texts: &HashMap<PathBuf, String>,
         store: &Store,
-    ) -> Result<Option<BTreeSet<String>>, Error> {
+    ) -> Result<Option<pass::Only>, Error> {
         let Some(last) = &self.last else {
             return Ok(None);
         };
@@ -566,29 +632,45 @@ impl Analyzer {
         {
             return Ok(None);
         }
-        let mut only = BTreeSet::new();
+        let mut only = pass::Only::default();
+        let mut declared = BTreeSet::new();
         for (path, hash) in hashed {
             let rel = path.to_string_lossy().replace('\\', "/");
             match last.files.get(path) {
                 None if is_rs(path) => return Ok(None),
                 None => {
-                    only.insert(rel);
+                    only.files.insert(rel);
                 }
-                Some((old, _)) if old != hash => {
+                Some(seen) if seen.hash != *hash => {
                     if let Some(before) = last.decls.get(&rel) {
                         let Some(text) = texts.get(path) else {
                             return Ok(None);
                         };
                         if &decl::fingerprint(text) != before {
-                            return Ok(None);
+                            let Some(owners) = last.owners.get(&rel) else {
+                                return Ok(None);
+                            };
+                            declared.extend(owners);
                         }
                     }
-                    only.insert(rel);
+                    only.files.insert(rel);
                 }
-                Some((_, key)) => {
-                    if !store.has_file_facts(key)? {
+                Some(seen) => {
+                    if !store.has_file_facts(&seen.key)? {
                         return Ok(None);
                     }
+                }
+            }
+        }
+        if !declared.is_empty() {
+            // A crate sees only the packages it depends on (`UnitPlan::closure`), so the change
+            // reaches no other package's facts.
+            let unit: BTreeSet<usize> = plan.unit.iter().map(|u| u.package).collect();
+            only.packages = &plan.dependents(&declared) & &unit;
+            // The files they walked last time, which they may walk no longer.
+            for (rel, owners) in &last.owners {
+                if !owners.is_disjoint(&only.packages) {
+                    only.files.insert(rel.clone());
                 }
             }
         }

@@ -115,6 +115,32 @@ pub struct UnitPlan {
 }
 
 impl UnitPlan {
+    /// `package` and the workspace packages it depends on, transitively: the crates its code can
+    /// name. The syntax pass looks only into these, as rustc does.
+    pub fn closure(&self, package: usize) -> BTreeSet<usize> {
+        let mut seen = BTreeSet::new();
+        let mut queue = vec![package];
+        while let Some(p) = queue.pop() {
+            if !seen.insert(p) {
+                continue;
+            }
+            for d in &self.packages[p].deps {
+                if let Some(q) = self.packages.iter().position(|q| q.name == d.package) {
+                    queue.push(q);
+                }
+            }
+        }
+        seen
+    }
+
+    /// The packages whose [`UnitPlan::closure`] holds one of `changed`: what a declaration
+    /// change in them can reach. Every other package's facts stay what they were.
+    pub fn dependents(&self, changed: &BTreeSet<usize>) -> BTreeSet<usize> {
+        (0..self.packages.len())
+            .filter(|p| !self.closure(*p).is_disjoint(changed))
+            .collect()
+    }
+
     /// The crates as facts: analyzed, or not analyzed with the reason (ADR 0007).
     pub fn crates(&self) -> Vec<Crate> {
         let analyzed: BTreeSet<usize> = self.unit.iter().map(|u| u.package).collect();
@@ -549,6 +575,24 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn a_change_reaches_the_package_and_those_depending_on_it() {
+        let lib = |n: &'static str| [(TargetKind::Lib, n)];
+        let packages = vec![
+            pkg("app", &[(TargetKind::Bin, "app")], &["leaf", "side"]),
+            pkg("base", &lib("base"), &[]),
+            pkg("leaf", &lib("leaf"), &["base"]),
+            pkg("side", &lib("side"), &["base"]),
+        ];
+        let plan = plan(packages, None, None).unwrap();
+        let set = |v: &[usize]| v.iter().copied().collect::<BTreeSet<usize>>();
+        assert_eq!(plan.closure(0), set(&[0, 1, 2, 3]));
+        assert_eq!(plan.closure(2), set(&[1, 2]));
+        assert_eq!(plan.dependents(&set(&[2])), set(&[0, 2]));
+        assert_eq!(plan.dependents(&set(&[1])), set(&[0, 1, 2, 3]));
+        assert_eq!(plan.dependents(&set(&[0])), set(&[0]));
     }
 
     #[test]

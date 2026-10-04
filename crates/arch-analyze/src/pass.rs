@@ -55,6 +55,23 @@ pub struct Output {
     pub unresolved: BTreeMap<String, Vec<String>>,
 }
 
+/// What an incremental pass walks: these files, and every file a crate of these packages walks
+/// (by index into the plan's packages).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Only {
+    /// Repository-relative paths.
+    pub files: BTreeSet<String>,
+    /// Packages whose files are all walked.
+    pub packages: BTreeSet<usize>,
+}
+
+impl Only {
+    /// Whether the file at `path`, walked by the crates of the packages `owners`, is walked.
+    pub fn holds(&self, path: &str, owners: Option<&BTreeSet<usize>>) -> bool {
+        self.files.contains(path) || owners.is_some_and(|o| !o.is_disjoint(&self.packages))
+    }
+}
+
 const VERBS: [&str; 7] = ["get", "post", "put", "delete", "patch", "head", "options"];
 const SPAWNS: [&str; 3] = ["spawn", "spawn_local", "spawn_blocking"];
 const SPAWN_HOMES: [&str; 6] = ["tokio", "task", "thread", "std", "async_std", "smol"];
@@ -99,6 +116,8 @@ struct SrcFile {
 struct Krate {
     ctx: CrateCtx,
     package: usize,
+    /// The packages its code can name: its own and those it depends on (`UnitPlan::closure`).
+    sees: BTreeSet<usize>,
 }
 
 struct It {
@@ -186,12 +205,15 @@ struct Unit<'a> {
     by_id: HashMap<String, usize>,
     mod_abs: HashMap<usize, String>,
     uses: HashMap<String, Vec<UseLeaf>>,
-    assoc: HashMap<(usize, String), usize>,
+    /// An item's associated items by name: a trait's own, or those of every impl of a type,
+    /// inherent impls first. A crate only sees the impls of the crates it can name.
+    assoc: HashMap<(usize, String), Vec<usize>>,
     variants: HashMap<usize, Vec<String>>,
     fields: HashMap<(usize, String), ast::Type>,
     self_of: HashMap<usize, usize>,
     trait_impls: HashMap<usize, Vec<(usize, usize)>>,
-    lib_labels: HashMap<String, String>,
+    /// Each unit library by the name code spells: its label and package.
+    lib_labels: HashMap<String, (String, usize)>,
     envs: HashMap<usize, Rc<Env>>,
     // results
     links: BTreeMap<(String, String, String, Option<String>), Link>,
@@ -341,7 +363,8 @@ impl<'a> Unit<'a> {
                 _ => format!("{}[{}]", package.ident(), ut.target.label()),
             };
             if ut.target.kind == TargetKind::Lib {
-                u.lib_labels.insert(package.ident(), label.clone());
+                u.lib_labels
+                    .insert(package.ident(), (label.clone(), ut.package));
             }
             let k = u.krates.len();
             u.krates.push(Krate {
@@ -352,6 +375,7 @@ impl<'a> Unit<'a> {
                     is_bin: ut.target.kind == TargetKind::Bin,
                 },
                 package: ut.package,
+                sees: plan.closure(ut.package),
             });
             let mut ids = Ids::default();
             let mut queue: Vec<(PathBuf, Vec<String>, bool)> =
@@ -585,8 +609,10 @@ impl<'a> Unit<'a> {
         for (parent, child) in &children {
             if self.kind(*parent) == ItemKind::Trait {
                 self.self_of.insert(*child, *parent);
-                self.assoc
-                    .insert((*parent, self.items[*child].f.item.name.clone()), *child);
+                self.assoc.insert(
+                    (*parent, self.items[*child].f.item.name.clone()),
+                    vec![*child],
+                );
             }
         }
         for (imp, adt, tr) in impls {
@@ -598,7 +624,8 @@ impl<'a> Unit<'a> {
                 self.self_of.insert(*child, adt);
                 self.assoc
                     .entry((adt, self.items[*child].f.item.name.clone()))
-                    .or_insert(*child);
+                    .or_default()
+                    .push(*child);
             }
         }
     }
@@ -655,7 +682,7 @@ impl<'a> Unit<'a> {
             // (`use async_trait::async_trait;`), which then means the crate, not the alias.
             if leaf.path.first().is_some_and(|f| f == name) {
                 let start = self.extern_crate(krate, name)?;
-                return self.walk(start, &leaf.path[1..], depth + 1);
+                return self.walk(krate, start, &leaf.path[1..], depth + 1);
             }
             return self.resolve(module, krate, &leaf.path, None, depth + 1);
         }
@@ -689,9 +716,17 @@ impl<'a> Unit<'a> {
         None
     }
 
+    /// Whether code of crate `krate` can see item `i`: it is in a crate of a package `krate`'s
+    /// package depends on, or of its own.
+    fn sees(&self, krate: usize, i: usize) -> bool {
+        let package = self.krates[self.items[i].krate].package;
+        self.krates[krate].sees.contains(&package)
+    }
+
     fn extern_crate(&self, krate: usize, name: &str) -> Option<Cur> {
-        if let Some(label) = self.lib_labels.get(name)
+        if let Some((label, package)) = self.lib_labels.get(name)
             && label != self.label(krate)
+            && self.krates[krate].sees.contains(package)
         {
             return self.by_path.get(label).map(|v| Cur::Items(v.clone()));
         }
@@ -732,11 +767,11 @@ impl<'a> Unit<'a> {
                 1,
             ),
         };
-        self.walk(cur, &path[i..], depth)
+        self.walk(krate, cur, &path[i..], depth)
     }
 
-    /// Follow the rest of a path from where its start resolved to.
-    fn walk(&self, mut cur: Cur, rest: &[String], depth: u8) -> Option<Cur> {
+    /// Follow the rest of a path from where its start resolved to, as code of crate `krate`.
+    fn walk(&self, krate: usize, mut cur: Cur, rest: &[String], depth: u8) -> Option<Cur> {
         for seg in rest {
             cur = match cur {
                 Cur::Items(v) => {
@@ -756,7 +791,7 @@ impl<'a> Unit<'a> {
                         if self.variants.get(&t).is_some_and(|vs| vs.contains(seg)) {
                             Cur::Variant(t, seg.clone())
                         } else {
-                            Cur::Items(vec![*self.assoc.get(&(t, seg.clone()))?])
+                            Cur::Items(vec![self.method_on(krate, t, seg)?])
                         }
                     }
                 }
@@ -853,8 +888,13 @@ impl<'a> Unit<'a> {
         env
     }
 
-    fn method_on(&self, ty: usize, name: &str) -> Option<usize> {
-        self.assoc.get(&(ty, name.to_string())).copied()
+    /// The associated item `name` of `ty` that code of crate `krate` reaches.
+    fn method_on(&self, krate: usize, ty: usize, name: &str) -> Option<usize> {
+        self.assoc
+            .get(&(ty, name.to_string()))?
+            .iter()
+            .copied()
+            .find(|i| self.sees(krate, *i))
     }
 
     fn ret_ty(&self, f: usize) -> Option<Ty> {
@@ -906,7 +946,7 @@ impl<'a> Unit<'a> {
                     return Some(recv);
                 }
                 match recv {
-                    Ty::Item(t) => self.ret_ty(self.method_on(t, &name)?),
+                    Ty::Item(t) => self.ret_ty(self.method_on(krate, t, &name)?),
                     Ty::Ext { .. } => None,
                 }
             }
@@ -1349,7 +1389,12 @@ impl<'a> Unit<'a> {
         }
         // A pattern, not a type-checked fact: it stays guessed in both passes.
         let was = std::mem::replace(&mut self.resolved, false);
-        for (imp, tr) in self.trait_impls.get(&made).cloned().unwrap_or_default() {
+        let krate = self.items[owner].krate;
+        let impls: Vec<(usize, usize)> = (self.trait_impls.get(&made).into_iter().flatten())
+            .filter(|(imp, _)| self.sees(krate, *imp))
+            .copied()
+            .collect();
+        for (imp, tr) in impls {
             let why = format!(
                 "builds a `{}` and passes it on; it implements `{}`",
                 self.items[made].f.item.name, self.items[tr].f.item.name
@@ -1497,7 +1542,7 @@ impl<'a> Unit<'a> {
         let w = self.witness(fi, at);
         match recv {
             Ty::Item(t) => {
-                let Some(f) = self.method_on(t, &name) else {
+                let Some(f) = self.method_on(self.items[owner].krate, t, &name) else {
                     return;
                 };
                 let port = self
@@ -2197,8 +2242,8 @@ fn flatten(tree: &ast::UseTree, prefix: &[String], out: &mut Vec<UseLeaf>) {
 /// finding migrations. With a rust-analyzer `session`, links come from the type-checked view
 /// and only the pattern links stay guessed.
 ///
-/// With `only`, the unit is read whole (its declarations resolve names) but only the files named
-/// are walked: their parts are what a whole pass gives them, the other files' are left out
+/// With `only`, the unit is read whole (its declarations resolve names) but only the files it
+/// holds are walked: their parts are what a whole pass gives them, the other files' are left out
 /// except for what the walk itself records (`walk`, `owners`, `unresolved`).
 pub fn run(
     root: &Path,
@@ -2206,11 +2251,20 @@ pub fn run(
     scope: &str,
     tree_files: &[PathBuf],
     session: Option<&crate::ra::Session>,
-    only: Option<&BTreeSet<String>>,
+    only: Option<&Only>,
 ) -> Result<Output> {
     let mut unit = Unit::load(root, plan, scope).context("reading the unit's sources")?;
+    // A file several crates walk is walked by all of them when one of their packages is.
+    let mut owners: HashMap<&str, BTreeSet<usize>> = HashMap::new();
+    for f in &unit.files {
+        let package = unit.krates[f.krate].package;
+        owners.entry(&f.path).or_default().insert(package);
+    }
     let walked: HashSet<usize> = (0..unit.files.len())
-        .filter(|fi| only.is_none_or(|o| o.contains(&unit.files[*fi].path)))
+        .filter(|fi| {
+            let path = unit.files[*fi].path.as_str();
+            only.is_none_or(|o| o.holds(path, owners.get(path)))
+        })
         .collect();
     for fi in 0..unit.files.len() {
         if walked.contains(&fi) {
@@ -2222,12 +2276,14 @@ pub fn run(
     }
     let mut out = unit.finish();
     if let Some(only) = only {
-        out.files.retain(|path, _| only.contains(path));
+        let owners = &out.owners;
+        out.files
+            .retain(|path, _| only.holds(path, owners.get(path)));
     }
     // Tables from migrations.
     for path in tree_files {
         let p = path.to_string_lossy().replace('\\', "/");
-        if only.is_some_and(|o| !o.contains(&p)) {
+        if only.is_some_and(|o| !o.holds(&p, None)) {
             continue;
         }
         if !(p.ends_with(".sql") && p.split('/').any(|s| s == "migrations")) {
