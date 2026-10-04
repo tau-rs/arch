@@ -74,14 +74,14 @@ fn resolve(env: &[(&str, &str)], path: &Path) -> Result<(String, TokenSource), F
 #[test]
 fn github_token_comes_first() {
     let path = fake_path(true, true);
-    let got = resolve(&[("GITHUB_TOKEN", "a"), ("GH_TOKEN", "b")], &path).unwrap();
+    let got = resolve(&[("GITHUB_TOKEN", "a"), ("GH_TOKEN", "b")], path).unwrap();
     assert_eq!(got, ("a".into(), TokenSource::Env("GITHUB_TOKEN")));
 }
 
 #[test]
 fn gh_token_comes_second() {
     let path = fake_path(true, true);
-    let got = resolve(&[("GITHUB_TOKEN", ""), ("GH_TOKEN", "b")], &path).unwrap();
+    let got = resolve(&[("GITHUB_TOKEN", ""), ("GH_TOKEN", "b")], path).unwrap();
     assert_eq!(got, ("b".into(), TokenSource::Env("GH_TOKEN")));
 }
 
@@ -89,7 +89,7 @@ fn gh_token_comes_second() {
 fn the_keychain_comes_before_gh() {
     let path = fake_path(true, true);
     assert_eq!(
-        resolve(&[], &path).unwrap(),
+        resolve(&[], path).unwrap(),
         ("from-keychain".into(), TokenSource::Keychain)
     );
 }
@@ -98,7 +98,7 @@ fn the_keychain_comes_before_gh() {
 fn gh_auth_token_comes_last() {
     let path = fake_path(false, true);
     assert_eq!(
-        resolve(&[], &path).unwrap(),
+        resolve(&[], path).unwrap(),
         ("from-gh".into(), TokenSource::Gh)
     );
 }
@@ -106,7 +106,7 @@ fn gh_auth_token_comes_last() {
 #[test]
 fn no_source_at_all_is_no_token() {
     let path = fake_path(false, false);
-    assert!(matches!(resolve(&[], &path), Err(ForgeError::NoToken)));
+    assert!(matches!(resolve(&[], path), Err(ForgeError::NoToken)));
 }
 
 #[test]
