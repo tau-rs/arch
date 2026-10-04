@@ -3,7 +3,7 @@
 
 [arch-fixtures]
 repo = "https://github.com/tau-rs/arch-fixtures"
-commit = "514db9fba48c13febbd90adab7ce173f57cbca35"   # main, 2026-10-03: first smallsvc golden facts.json (its PR #10)
+commit = "aa5f6d0ec663b1b73dd0e4e4717df977af5d79e1"   # main, 2026-10-04: smallsvc golden analysed for its pinned target, schema_version 1 (its PR #25)
 
 [repos.zero2prod]
 repo = "https://github.com/LukeMathWalker/zero-to-production"

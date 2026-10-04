@@ -41,6 +41,8 @@ fn head(commit: &str) -> TreeHead {
         analyzer: Analyzer {
             name: "arch-analyze".into(),
             version: "0.1.0".into(),
+            target: None,
+            target_pinned: false,
             degraded: vec![],
         },
         crates: vec![Crate {

@@ -74,6 +74,11 @@ pub struct Areas {
     /// The main `[[bin]]`, when overriding the first one (ADR 0007).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub main_bin: Option<String>,
+    /// The target triple to analyse for, when pinned; this machine's otherwise (ADR 0030).
+    /// `arch init` never writes it: the initialiser's triple would make every teammate on
+    /// another platform cross-compile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
     /// Overrides.
     #[serde(rename = "area")]
     pub areas: Vec<AreaOverride>,
@@ -109,6 +114,7 @@ mod tests {
             r#"
 rule = "hexagon"
 main_bin = "smallsvc"
+target = "x86_64-unknown-linux-gnu"
 
 [[area]]
 name = "ship"
@@ -120,6 +126,7 @@ order = 2
         .unwrap();
         assert_eq!(a.rule, Some(ColumnRule::Hexagon));
         assert_eq!(a.main_bin.as_deref(), Some("smallsvc"));
+        assert_eq!(a.target.as_deref(), Some("x86_64-unknown-linux-gnu"));
         assert_eq!(a.area("ship").unwrap().side, Some(Column::Domain));
         let back: Areas = toml::from_str(&a.to_toml().unwrap()).unwrap();
         assert_eq!(a, back);

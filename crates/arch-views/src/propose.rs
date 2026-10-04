@@ -88,6 +88,9 @@ pub fn propose_areas(facts: &Facts) -> Areas {
             .main_target
             .strip_prefix("bin:")
             .map(str::to_string),
+        // Never this machine's triple: a teammate on another platform would cross-compile
+        // (ADR 0030).
+        target: None,
         areas,
     }
 }

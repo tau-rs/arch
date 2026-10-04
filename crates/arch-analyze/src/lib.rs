@@ -152,6 +152,8 @@ pub struct Analyzer {
     options: Options,
     session: Option<ra::Session>,
     load_error: Option<String>,
+    /// The `areas.toml` target rust-analyzer was loaded for; `None` for this machine's.
+    pinned: Option<String>,
     /// How the repository names its objects, for package ids (ADR 0002).
     format: package::ObjectFormat,
     /// The unit plan, with what it was read from: manifests, lock file, `main_bin`.
@@ -161,8 +163,17 @@ pub struct Analyzer {
 }
 
 /// What `cargo metadata` reads: every manifest, the lock file, cargo's configuration, and the
-/// `areas.toml` choice of main binary.
-type PlanInputs = (Option<String>, Vec<(PathBuf, ContentHash)>);
+/// `areas.toml` choice of main binary and target.
+type PlanInputs = (Option<String>, Option<String>, Vec<(PathBuf, ContentHash)>);
+
+/// What `areas.toml` says about the unit: its main binary and the target to analyse for.
+fn unit_settings(root: &Path) -> (Option<String>, Option<String>) {
+    let arch = ArchDir::of_repo(root);
+    match arch.exists().then(|| arch.read_areas().ok()).flatten() {
+        Some(a) => (a.main_bin, a.target),
+        None => (None, None),
+    }
+}
 
 /// Whether `cargo metadata` reads this file (repository-relative): a manifest, a lock file, or
 /// cargo's configuration at the top of the repository. A change to one re-reads the plan and
@@ -174,9 +185,14 @@ pub(crate) fn is_plan_input(rel: &Path) -> bool {
             && name.is_some_and(|n| n == "config.toml" || n == "config"))
 }
 
-/// rust-analyzer loaded at `root`, or why it could not be.
-fn load_session(root: &Path, options: &Options) -> (Option<ra::Session>, Option<String>) {
-    match big_stack(|| ra::Session::load(root, options.target_dir.as_deref())) {
+/// rust-analyzer loaded at `root` for `target` (this machine's when `None`, ADR 0030), or why
+/// it could not be.
+fn load_session(
+    root: &Path,
+    options: &Options,
+    target: Option<&str>,
+) -> (Option<ra::Session>, Option<String>) {
+    match big_stack(|| ra::Session::load(root, options.target_dir.as_deref(), target)) {
         Ok(s) => (Some(s), None),
         Err(e) => (None, Some(format!("{e:#}"))),
     }
@@ -190,9 +206,10 @@ impl Analyzer {
             path: repo.to_path_buf(),
             source,
         })?;
+        let (_, pinned) = unit_settings(&root);
         let (session, load_error) = match options.depth {
             Depth::Syntax => (None, None),
-            Depth::Resolved => load_session(&root, &options),
+            Depth::Resolved => load_session(&root, &options, pinned.as_deref()),
         };
         let format = if git::is_repo(&root) {
             package::ObjectFormat::of_repo(&root)
@@ -204,6 +221,7 @@ impl Analyzer {
             options,
             session,
             load_error,
+            pinned,
             format,
             plan: None,
             last: None,
@@ -323,14 +341,10 @@ impl Analyzer {
             TreeKey::Worktree(h) => format!("wt:{h}"),
         };
 
-        let arch = ArchDir::of_repo(&root);
-        let main_bin = if arch.exists() {
-            arch.read_areas().ok().and_then(|a| a.main_bin)
-        } else {
-            None
-        };
+        let (main_bin, target) = unit_settings(&root);
         let inputs: PlanInputs = (
             main_bin.clone(),
+            target.clone(),
             hashed
                 .iter()
                 .filter(|(p, _)| is_plan_input(p))
@@ -341,19 +355,25 @@ impl Analyzer {
         if plan_changed {
             let plan =
                 cargo::read(&root, main_bin.as_deref()).map_err(|e| unit_err(format!("{e:#}")))?;
-            // rust-analyzer read the crate graph from the files cargo reads when it loaded: one
-            // of them changed since the last index (a new member, a dependency, a lock update).
-            let changed = match &self.plan {
+            // rust-analyzer read the crate graph from the files cargo reads when it loaded, for
+            // one target: one of them changed since the last index (a new member, a dependency,
+            // a lock update, the areas.toml target).
+            let mut changed = match &self.plan {
                 Some((before, _)) if self.options.depth == Depth::Resolved => {
-                    changed_paths(&before.1, &inputs.1)
+                    changed_paths(&before.2, &inputs.2)
                 }
                 _ => Vec::new(),
             };
+            if self.options.depth == Depth::Resolved && target != self.pinned {
+                changed.push(".arch/areas.toml target".into());
+                self.pinned = target;
+            }
             self.plan = Some((inputs, plan));
             if !changed.is_empty() {
                 self.reload_session(&format!("{} changed", changed.join(", ")));
             }
         }
+        let options = &self.options;
         let plan = self.plan.as_ref().expect("read above").1.clone();
         let only = if plan_changed {
             None
@@ -409,6 +429,8 @@ impl Analyzer {
             analyzer: Analyzer_ {
                 name: "arch-analyze".into(),
                 version,
+                target: self.session.as_ref().map(|s| s.target().to_string()),
+                target_pinned: self.session.is_some() && self.pinned.is_some(),
                 degraded,
             },
             crates,
@@ -510,7 +532,7 @@ impl Analyzer {
     /// syntax-level with the reason (ADR 0009, 0010) until cargo's inputs change again.
     fn reload_session(&mut self, why: &str) {
         self.session = None;
-        let (session, load_error) = load_session(&self.root, &self.options);
+        let (session, load_error) = load_session(&self.root, &self.options, self.pinned.as_deref());
         self.session = session;
         self.load_error = load_error.map(|e| format!("{e} (loading again after {why})"));
     }
@@ -582,21 +604,7 @@ impl Analyzer {
             .iter()
             .find(|(p, _)| p == Path::new("Cargo.lock"))
             .map(|(_, b)| b.hex());
-        let analyzer = format!(
-            "analyzer {} {}
-unit {} {}
-degraded {}
-",
-            head.analyzer.version,
-            if self.session.is_some() {
-                "resolved"
-            } else {
-                "syntax"
-            },
-            head.repo.unit.id,
-            head.repo.unit.main_target,
-            serde_json::to_string(&head.analyzer.degraded).unwrap_or_default(),
-        );
+        let analyzer = analyzer_inputs(head, self.session.as_ref().map(|s| s.toolchain()));
         let ids = package::package_ids(plan, &trees, lock.as_deref(), &analyzer);
         // Innermost package directory first.
         let mut dirs: Vec<(PathBuf, usize)> = (0..plan.packages.len())
@@ -633,6 +641,38 @@ fn changed_paths(before: &[(PathBuf, ContentHash)], now: &[(PathBuf, ContentHash
         .map(|(p, _)| p.to_string_lossy().replace('\\', "/"))
         .collect();
     changed.into_iter().collect()
+}
+
+/// What the analyzer was asked for and could do, for the package ids (ADR 0002): its version
+/// and depth, the unit, what it could not type-check, and at resolved depth the inputs from
+/// outside the tree that ADR 0030 names: the target analysed for, and the toolchain
+/// (`toolchain`, given at resolved depth only). Syntax-level facts depend on neither.
+fn analyzer_inputs(head: &TreeHead, toolchain: Option<&ra::Toolchain>) -> String {
+    let mut text = format!(
+        "analyzer {} {}\nunit {} {}\ndegraded {}\n",
+        head.analyzer.version,
+        if toolchain.is_some() {
+            "resolved"
+        } else {
+            "syntax"
+        },
+        head.repo.unit.id,
+        head.repo.unit.main_target,
+        serde_json::to_string(&head.analyzer.degraded).unwrap_or_default(),
+    );
+    if let Some(t) = toolchain {
+        let target = head.analyzer.target.as_deref().unwrap_or("-");
+        let source = if head.analyzer.target_pinned {
+            "pinned"
+        } else {
+            "host"
+        };
+        text.push_str(&format!(
+            "target {target} {source}\ntoolchain {} {}\n",
+            t.release, t.commit_hash
+        ));
+    }
+    text
 }
 
 /// Why a crate's facts are partly guessed while rust-analyzer is loaded: it has no module for
@@ -695,4 +735,74 @@ fn walk_dir(root: &Path) -> Vec<PathBuf> {
     }
     out.sort();
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn head(target: Option<&str>, pinned: bool) -> TreeHead {
+        TreeHead {
+            repo: Repo {
+                name: "demo".into(),
+                commit: "c".into(),
+                unit: Unit {
+                    id: "unit:demo".into(),
+                    main_target: "lib".into(),
+                },
+            },
+            analyzer: Analyzer_ {
+                name: "arch-analyze".into(),
+                version: "0.1.0".into(),
+                target: target.map(str::to_string),
+                target_pinned: pinned,
+                degraded: vec![],
+            },
+            crates: vec![],
+            assembled: Default::default(),
+        }
+    }
+
+    fn toolchain(release: &str, commit_hash: &str) -> ra::Toolchain {
+        ra::Toolchain {
+            host: "x86_64-unknown-linux-gnu".into(),
+            release: release.into(),
+            commit_hash: commit_hash.into(),
+        }
+    }
+
+    #[test]
+    fn the_target_and_the_toolchain_name_resolved_facts() {
+        // ADR 0030: each input from outside the tree changes the package ids.
+        let linux = Some("x86_64-unknown-linux-gnu");
+        let t = toolchain("1.99.0", "b940084d7");
+        let base = analyzer_inputs(&head(linux, false), Some(&t));
+        let other = [
+            analyzer_inputs(&head(Some("aarch64-apple-darwin"), false), Some(&t)),
+            analyzer_inputs(&head(linux, true), Some(&t)),
+            analyzer_inputs(
+                &head(linux, false),
+                Some(&toolchain("1.100.0", "b940084d7")),
+            ),
+            analyzer_inputs(&head(linux, false), Some(&toolchain("1.99.0", "0123abcd"))),
+        ];
+        for o in &other {
+            assert_ne!(&base, o);
+        }
+        // The host's own name is not an input: two hosts analysing for one pinned target agree.
+        let mut mac = t.clone();
+        mac.host = "aarch64-apple-darwin".into();
+        assert_eq!(
+            analyzer_inputs(&head(linux, true), Some(&t)),
+            analyzer_inputs(&head(linux, true), Some(&mac))
+        );
+    }
+
+    #[test]
+    fn syntax_level_facts_are_named_without_the_platform_or_the_toolchain() {
+        assert_eq!(
+            analyzer_inputs(&head(None, false), None),
+            "analyzer 0.1.0 syntax\nunit unit:demo lib\ndegraded []\n"
+        );
+    }
 }

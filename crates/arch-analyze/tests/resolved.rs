@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use arch_analyze::{Analyzer, Commits, Depth, Options, analyze};
+use arch_analyze::{Analyzer, Commits, Depth, Options, Recompute, analyze};
 use arch_facts::*;
 
 fn options() -> Options {
@@ -538,5 +538,112 @@ fn a_file_rust_analyzer_has_no_module_for_keeps_guessed_links_and_degrades_its_c
             "demo",
             "rust-analyzer has no module for src/gone.rs: links guessed"
         )]
+    );
+}
+
+/// The host triple, as `rustc -vV` names it.
+fn host() -> String {
+    let out = std::process::Command::new("rustc")
+        .arg("-vV")
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .find_map(|l| l.strip_prefix("host: "))
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn the_platform_analysed_for_is_the_areas_toml_target_or_this_machine_s() {
+    // ADR 0030: rust-analyzer resolves nothing in code switched off for the platform it
+    // analyses, so a Linux-only call has its link only when analysed for Linux.
+    let tmp = tempfile::tempdir().unwrap();
+    let pin = |triple: Option<&str>| {
+        let areas = triple.map_or(String::new(), |t| format!("target = \"{t}\"\n"));
+        write(tmp.path(), &[(".arch/areas.toml", &areas)]);
+    };
+    write(
+        tmp.path(),
+        &[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "src/lib.rs",
+                "#[cfg(target_os = \"linux\")]\nmod epoll {\n    pub fn wait() {}\n}\n\npub fn run() {\n    #[cfg(target_os = \"linux\")]\n    epoll::wait();\n}\n",
+            ),
+        ],
+    );
+    pin(Some("x86_64-unknown-linux-gnu"));
+    let mut analyzer = Analyzer::open(
+        tmp.path(),
+        Options {
+            repo_name: Some("demo".into()),
+            commit: None,
+            target_dir: Some(tmp.path().join("target")),
+            ..options()
+        },
+    )
+    .unwrap();
+    let mut store = Store::in_memory().unwrap();
+    let wait = item("demo::epoll::wait#fn");
+    let mut indexed = |analyzer: &mut Analyzer| {
+        let key = analyzer.index(&mut store).unwrap();
+        let facts = store.facts(&key).unwrap().unwrap();
+        let keys: Vec<FactsKey> = store
+            .tree_files(&key)
+            .unwrap()
+            .into_iter()
+            .map(|f| f.facts_key)
+            .collect();
+        let calls = facts
+            .links
+            .iter()
+            .any(|l| l.from == "demo::run#fn" && l.to == wait);
+        (facts.analyzer, calls, keys)
+    };
+
+    let (linux, calls, linux_keys) = indexed(&mut analyzer);
+    assert_eq!(
+        (linux.target.as_deref(), linux.target_pinned, calls),
+        (Some("x86_64-unknown-linux-gnu"), true, true)
+    );
+
+    // Another pin: rust-analyzer is loaded again for it, and every file is named anew.
+    pin(Some("aarch64-apple-darwin"));
+    let (darwin, calls, darwin_keys) = indexed(&mut analyzer);
+    assert_eq!(
+        (darwin.target.as_deref(), darwin.target_pinned, calls),
+        (Some("aarch64-apple-darwin"), true, false)
+    );
+    assert_eq!(analyzer.last_recompute(), Some(&Recompute::Unit));
+    assert!(
+        linux_keys.iter().all(|k| !darwin_keys.contains(k)),
+        "a target change must rename every file's facts"
+    );
+
+    // No pin: this machine's triple, recorded as such.
+    pin(None);
+    let (here, _, _) = indexed(&mut analyzer);
+    assert_eq!((here.target, here.target_pinned), (Some(host()), false));
+}
+
+#[test]
+fn syntax_level_facts_name_no_platform() {
+    // The syntax pass reads every `#[cfg]` branch: its facts do not depend on the target.
+    let facts = analyze(
+        &smallsvc(),
+        &Options {
+            depth: Depth::Syntax,
+            ..options()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (facts.analyzer.target, facts.analyzer.target_pinned),
+        (None, false)
     );
 }

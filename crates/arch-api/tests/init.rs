@@ -29,6 +29,11 @@ fn init_writes_areas_rules_and_the_gitignore_line_in_one_commit() {
 
     assert_eq!(outcome.areas.rule, Some(ColumnRule::Hexagon));
     assert_eq!(outcome.areas.main_bin.as_deref(), Some("orderly"));
+    // The target stays this machine's: pinning the initialiser's would make every teammate on
+    // another platform cross-compile (ADR 0030).
+    assert_eq!(outcome.areas.target, None);
+    let written = std::fs::read_to_string(repo.path().join(".arch/areas.toml")).unwrap();
+    assert!(!written.contains("target"), "{written}");
     let names: Vec<&str> = outcome
         .areas
         .areas

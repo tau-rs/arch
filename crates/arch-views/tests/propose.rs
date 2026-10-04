@@ -31,6 +31,8 @@ impl Builder {
             Analyzer {
                 name: "hand".into(),
                 version: "0".into(),
+                target: None,
+                target_pinned: false,
                 degraded: vec![],
             },
         );

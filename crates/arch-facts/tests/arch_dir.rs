@@ -30,6 +30,7 @@ fn areas_rules_allows_round_trip_as_toml() {
     let mut areas = Areas {
         rule: Some(ColumnRule::Hexagon),
         main_bin: Some("smallsvc".into()),
+        target: Some("x86_64-unknown-linux-gnu".into()),
         areas: vec![],
     };
     areas.set(AreaOverride {
