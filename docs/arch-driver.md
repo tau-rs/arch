@@ -32,6 +32,15 @@ scheduler iterates it.
 | `Turn` | the session id, then the events; `finish()` drains to the `TurnResult` |
 | `TurnResult` | ok, subtype (`success`, `error_max_turns`, …), text, structured output, turns, cost, denied tools |
 
+`ReplayDriver` plays recorded turns instead. `ReplayDriver::acting()` also does what Claude Code
+does around each top-level tool call, through the turn's `Context`: `Write` and `Edit` run the
+`PreToolUse` hooks of the settings file and are applied only when none blocks (exit 2), then the
+`PostToolUse` (or `PostToolUseFailure`) hooks run; `Read` runs `PostToolUse`; `mcp__<server>__<tool>`
+goes to that server of the MCP config, started at its first call. A relative path is made absolute
+against the task's cwd, as Claude Code's are. The recorded tool results are still replayed as they
+are. `ARCH_DRIVER=replay:<dir>` is this double over `<dir>/*.jsonl`, so a test of the binary gets
+real writes and real commits from arch's own tool layer (#48).
+
 ## The claude-code command line
 
 FINDINGS F-1 (no `--bare`), F-4 (no `--no-session-persistence`) and F-5 (`--tools` restricts and
@@ -162,6 +171,9 @@ write) would have no expected entry and the watcher would report it as `you` (AD
 - `cargo test -p arch-driver`: the parser over every fixture, the argv pinned, the adapter against a
   stub binary (stdin, cwd, chosen id, resume, exit without a result, missing binary, stop), and the
   replay double driving a consumer.
+- `cargo test -p arch-driver --test acting`: the acting replay with stub hooks and a stub MCP
+  server that log what they get: a write through the hooks, an edit, a denied write left unwritten,
+  a read's post hook, an MCP `initialize` then `tools/call` with the arguments, absolute paths.
 - `cargo test -p arch-driver --test tool_layer`: the pre hook as a table (in scope + fresh, out of
   scope, changed since read, never read, new file in scope, out of the worktree, `git commit` and
   `git push` in Bash), the post hook, the hooks on a temp worktree (Denial record, expected before

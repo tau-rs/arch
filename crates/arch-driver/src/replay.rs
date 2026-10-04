@@ -3,10 +3,15 @@
 //! Each `start` or `resume` plays the next recorded turn and logs the call, so a test of the
 //! session engine can assert what it asked for. A recording without a result line ends with
 //! [`DriverError::NoResult`], which is how a test simulates an agent that died mid-turn.
+//!
+//! [`ReplayDriver::acting`] also acts out each recorded tool call the way Claude Code would:
+//! through the hooks and the MCP server of the turn's [`Context`], so writes and commits happen
+//! for real (`ARCH_DRIVER=replay:<dir>`, #48).
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
+use crate::acting::{Acting, Actor};
 use crate::stream::StreamParser;
 use crate::{Context, Driver, DriverError, Task, Turn, TurnEvent, TurnHandle};
 
@@ -26,6 +31,7 @@ pub struct ReplayCall {
 pub struct ReplayDriver {
     turns: VecDeque<String>,
     calls: Vec<ReplayCall>,
+    acting: bool,
 }
 
 impl ReplayDriver {
@@ -34,7 +40,16 @@ impl ReplayDriver {
         ReplayDriver {
             turns: turns.into_iter().collect(),
             calls: vec![],
+            acting: false,
         }
+    }
+
+    /// Act out each top-level tool call through the turn's hooks and MCP servers: `Write` and
+    /// `Edit` are applied when the pre hooks let them through, `mcp__<server>__<tool>` calls
+    /// reach the server. The recorded tool results are replayed as they are.
+    pub fn acting(mut self) -> Self {
+        self.acting = true;
+        self
     }
 
     /// A double over recording files, played in the order given.
@@ -103,11 +118,13 @@ impl ReplayDriver {
         if parser.stats().results == 0 {
             items.push(Err(DriverError::NoResult));
         }
-        Ok(Turn::new(
-            session_id,
-            Box::new(items.into_iter()),
-            TurnHandle::default(),
-        ))
+        let events: Box<dyn Iterator<Item = _> + Send> = if self.acting {
+            let actor = Actor::new(&task.cwd, &session_id, context)?;
+            Box::new(Acting::new(items.into_iter(), actor))
+        } else {
+            Box::new(items.into_iter())
+        };
+        Ok(Turn::new(session_id, events, TurnHandle::default()))
     }
 }
 

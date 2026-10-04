@@ -20,6 +20,8 @@ pub mod gate;
 pub mod judge;
 pub mod machine;
 pub mod pack;
+pub mod planner;
+pub mod review;
 pub mod shaper;
 
 pub use accept::{AcceptOptions, accept};
@@ -62,6 +64,33 @@ pub enum Error {
     /// The session waits on nothing, though its state says it does.
     #[error("session {0}: in asks or deviation with no element waiting")]
     NotWaiting(SessionId),
+    /// The plan could not be had: a bad `plan.toml`, or a planner that gave no elements.
+    #[error("plan: {0}")]
+    Plan(String),
+    /// The forge failed or refused.
+    #[error(transparent)]
+    Forge(#[from] arch_forge::ForgeError),
+    /// The session's branch has no request on the forge.
+    #[error("session {0}: no {1} on the forge for its branch; open it with `arch session pr`")]
+    NoRequest(SessionId, &'static str),
+    /// The request was closed without merging.
+    #[error("{0} was closed without merging")]
+    RequestClosed(String),
+    /// The request's checks failed or are still running.
+    #[error("{what} {state}: arch merges once they pass")]
+    ChecksNotGreen {
+        /// The forge's word for its checks.
+        what: &'static str,
+        /// `failed` or `pending`.
+        state: &'static str,
+    },
+    /// The merge strategy is not one the repo allows, or the repo allows several and none was
+    /// named.
+    #[error("{0}")]
+    Strategy(String),
+    /// The forge still refuses the merge after [`review::SETTLE`].
+    #[error("{0}")]
+    NotMergeable(String),
     /// A door that a later issue opens.
     #[error("{what} is not there yet ({issue})")]
     NotYet {

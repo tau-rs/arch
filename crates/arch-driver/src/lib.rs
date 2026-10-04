@@ -7,6 +7,7 @@
 //! session engine is testable without a Claude login. The [`tool_layer`] is the agent's
 //! confinement: `arch hook pre|post`, the MCP tools, and the files that hand them to the driver.
 
+mod acting;
 mod claude_code;
 mod replay;
 mod stream;
