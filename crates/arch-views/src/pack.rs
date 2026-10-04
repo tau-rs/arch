@@ -81,7 +81,18 @@ fn header(out: &mut String, facts: &Facts) {
         repo.unit.id, repo.unit.main_target, repo.commit
     );
     if facts.analyzer.degraded.is_empty() {
-        out.push_str("Facts are type-checked.\n");
+        match &facts.analyzer.target {
+            // ADR 0030: links depend on the platform analysed for.
+            Some(t) => {
+                let pinned = if facts.analyzer.target_pinned {
+                    " (pinned in `.arch/areas.toml`)"
+                } else {
+                    ""
+                };
+                let _ = writeln!(out, "Facts are type-checked, analyzed for `{t}`{pinned}.");
+            }
+            None => out.push_str("Facts are type-checked.\n"),
+        }
     } else {
         for d in &facts.analyzer.degraded {
             let _ = writeln!(

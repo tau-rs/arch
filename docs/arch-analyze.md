@@ -81,6 +81,52 @@ Budgets (ADR 0026) are benchmarks with thresholds: `cargo bench -p arch-analyze`
 `reload_after_manifest` (a `Cargo.toml` save, from the save to the new resolved facts) is held
 to the first index's 5 s: loading rust-analyzer again is a first load of the new crate graph.
 
+## Inputs outside the tree (ADR 0030)
+
+Some of what rust-analyzer reads is not in the repository: the platform it analyses for, the
+toolchain, and the code build scripts generate. Each one is part of the package id, the
+per-package part of a file's facts key (ADR 0002). So two machines never share a cache entry
+computed from different inputs, and the facts say which platform they describe. Like a recipe
+card: it either names the oven it was baked in, or the house fixes one oven for everyone.
+
+```mermaid
+flowchart LR
+  T["areas.toml target, else rustc -vV host"] --> S["rust-analyzer load"]
+  R["rustc -vV release + commit hash"] --> P["package id"]
+  O["OUT_DIR contents, per package"] --> P
+  S --> P --> K["facts key"]
+  S --> F["facts: analyzer.target, target_pinned"]
+```
+
+| input | what happens | where it shows |
+|---|---|---|
+| target platform | `.arch/areas.toml` `target = "<triple>"` when set, else this machine's (`rustc -vV` `host`); `arch init` never writes it | `analyzer.target` / `target_pinned` in the facts; `arch check` header `analyzed for <triple> (areas.toml)`; the context pack header |
+| toolchain | `rustc -vV` in the repository root (honours `rust-toolchain.toml`): release and commit hash | the key only; `Analyzer::toolchain()` for the Checks tab. Not in the facts: every Rust release would change the golden |
+| build-script output | each repository package's `OUT_DIR`, hashed by relative path and content; in that package's id and in the ids of the packages depending on it | the key only |
+| Cargo features | always the unit's default features, as `Cargo.toml` declares them (no `--all-features`) | — (`Cargo.toml` is in the tree) |
+| `cfg(test)` | always on | — (part of the analyzer version) |
+
+The target, toolchain and `OUT_DIR` are read once per rust-analyzer load, never per save, which is
+right as well as cheap. rust-analyzer reads `OUT_DIR` when it loads, so the load-time bytes are
+what the facts were computed from. A change to `target` in `areas.toml` loads rust-analyzer
+again, like a manifest change. Syntax-level facts read every `#[cfg]` branch alike: they record no
+target and none of these inputs is in their key.
+
+When the pinned target is this machine's own triple, cargo is not given `--target`: it keeps a
+`--target` build in its own directory, and the `target/` already built would not be reused (ADR
+0026). A foreign pin is a real cross check: `rustup target add <triple>`, and a dependency's C
+build script may fail for it (`ring` does, macOS for Linux). rust-analyzer then logs the failure
+and smallsvc's facts are unaffected.
+
+`same_inputs_same_facts` (`tests/same_inputs.rs`) is CI's check, on Linux and macOS runners:
+two checkouts of smallsvc at different paths, each with its own `target/` and store, analysed cold,
+give byte-identical facts on each machine and across them.
+
+One honest consequence: without a pin, a Mac and a Linux machine disagree about links inside
+platform-gated code, and both say which platform they analysed for. **Known gap, not covered:** a
+proc-macro that reads outside the tree (`sqlx::query!` connecting to `DATABASE_URL`) can change its
+output with nothing in the key changing; environments cannot be enumerated.
+
 ## What the syntax-level pass produces, and how it guesses
 
 Every link has `confidence: guessed` and a `reason` naming the mechanism. Every analyzed crate is
@@ -124,7 +170,7 @@ them (`const fn` bodies and `const`/`static` initializers kept).
 | Rust files whose fingerprint is unchanged (bodies, comments) | those files only (`Recompute::Files`); every other delta is carried forward under its new key |
 | files that hold no Rust (a migration, a README) | nothing is walked; a migration's tables are read again |
 | a fingerprint, or adds or removes a Rust file | the unit (`Recompute::Unit`) |
-| a manifest, `Cargo.lock`, `.cargo/config.toml`, or `areas.toml`'s `main_bin` | the unit, after `cargo metadata` runs again and, but for `main_bin`, rust-analyzer loads again; otherwise the unit plan is reused |
+| a manifest, `Cargo.lock`, `.cargo/config.toml`, or `areas.toml`'s `main_bin` or `target` | the unit, after `cargo metadata` runs again and, but for `main_bin`, rust-analyzer loads again; otherwise the unit plan is reused |
 
 Only the changed files are walked and resolved, but the unit is still read whole, since its
 declarations resolve their names. `tests/incremental.rs` (`incremental_equals_cold`) proves the
