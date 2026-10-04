@@ -6,8 +6,10 @@
 //! format, from the bytes the analyzer reads anyway: no `git` process, and nothing written into
 //! the repository's object store. A package id then combines that tree id with the tree ids of
 //! the unit packages it depends on (all of them, transitively, so that cycles through
-//! dev-dependencies are harmless), the `Cargo.lock` blob id, and what the analyzer was asked
-//! for (its version and depth, the unit, what it could not type-check).
+//! dev-dependencies are harmless), the `Cargo.lock` blob id, what the analyzer was asked for
+//! (its version and depth, the unit, what it could not type-check, the target and toolchain),
+//! and the content of the build-script output of the package and of those it depends on
+//! (ADR 0030).
 //!
 //! Git-compatible within limits stated here: submodules (gitlinks) and symlinks to directories
 //! are not among the files the analyzer reads, so a tree that holds them gets another id than
@@ -183,12 +185,15 @@ pub struct PackageIds {
 }
 
 /// Name every package of `plan` (ADR 0002). `trees` are the tree ids from [`tree_ids`], `lock`
-/// the `Cargo.lock` blob id, `analyzer` what the analyzer was asked for and could do.
+/// the `Cargo.lock` blob id, `analyzer` what the analyzer was asked for and could do, and
+/// `out_dirs` the hash of each package's build-script output by package directory, for the
+/// packages that have one (ADR 0030).
 pub fn package_ids(
     plan: &UnitPlan,
     trees: &BTreeMap<PathBuf, String>,
     lock: Option<&str>,
     analyzer: &str,
+    out_dirs: &BTreeMap<PathBuf, String>,
 ) -> PackageIds {
     let empty = String::from("-");
     let tree_of = |p: usize| trees.get(&package_dir(plan, p)).unwrap_or(&empty);
@@ -221,6 +226,17 @@ pub fn package_ids(
                 .collect();
             for (name, t) in deps {
                 text.push_str(&format!("dep {name} {t}\n"));
+            }
+            // What build scripts generated, read like source: the package's own and its deps'.
+            let outs: BTreeMap<&str, &String> = std::iter::once(p)
+                .chain(seen.iter().copied())
+                .filter_map(|r| {
+                    let out = out_dirs.get(&package_dir(plan, r))?;
+                    Some((plan.packages[r].name.as_str(), out))
+                })
+                .collect();
+            for (name, out) in outs {
+                text.push_str(&format!("out_dir {name} {out}\n"));
             }
             text.push_str(&tail);
             hex::encode(Sha256::digest(text.as_bytes()))
