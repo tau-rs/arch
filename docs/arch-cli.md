@@ -2,7 +2,8 @@
 
 `arch` is the one binary. It depends on `arch-api` only; `arch-api` holds the methods and
 re-exports the types the CLI prints. Live today: `init` and `check` (milestone 4, issue #5),
-`hook` and `mcp` (the tool layer, issue #46; see `docs/arch-driver.md`).
+`hook` and `mcp` (the tool layer, issue #46; see `docs/arch-driver.md`). The app API's schema is
+published; `serve` is not live yet (issue #7).
 
 ## `arch init [path] [--no-commit]`
 
@@ -60,3 +61,30 @@ on stdin. The driver's `--settings` file runs it; nobody types it.
 
 The MCP server over stdio, tools `read · check · commit · ask`, for one element. The driver's
 `--mcp-config` file starts it. `--co-author` defaults to `Claude <noreply@anthropic.com>`.
+
+## The app API schema: `schemas/arch-api.json`
+
+The contract with arch-app (ADR 0034 in arch-design). It is an OpenRPC 1.3 document generated from
+`arch_api::rpc`:
+
+- methods take their params by name;
+- results refer to `components.schemas`;
+- pushed events are listed in `x-arch-events`.
+
+arch-app pins the file by commit (`tau-rs/arch@<sha>:schemas/arch-api.json`) and generates its
+client from it. Nothing is built as a release asset.
+
+`info.version` is semver and starts at `0.1.0`. An addition bumps the minor and a break bumps the
+major, even at 0, so a client can tell an engine that added a method from one that broke one.
+Every change is announced in arch-design before it ships.
+
+| version | methods | events |
+|---|---|---|
+| 0.1.0 | `initialize` (`client`, optional `schemaVersion`) → `{ engineVersion, schemaVersion }` | none |
+
+`tests/rpc.rs` checks two things:
+
+- **Drift:** the committed file equals the generated one. `ARCH_UPDATE_SCHEMA=1 cargo test -p
+  arch-api` regenerates it.
+- **Validity:** the file validates against the OpenRPC 1.3 meta-schema, vendored in
+  `crates/arch-api/tests/openrpc/` so the check runs offline.

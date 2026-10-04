@@ -4,12 +4,14 @@
 //! Depends on every other library crate. Milestone 6 of `handoff-arch.md` brings the two
 //! transports. Present today, for the CLI: [`init()`] and [`check()`] (milestone 4, issue #5),
 //! and [`hook()`] and [`mcp()`], the tool layer an agent runs under (ADR 0012, issue #46). The
-//! CLI depends on this crate only, so the types it prints are re-exported here.
+//! app method set and its published schema, `schemas/arch-api.json`, are in [`rpc`] (ADR 0034,
+//! issue #7). The CLI depends on this crate only, so the types it prints are re-exported here.
 
 use std::path::PathBuf;
 
 pub mod check;
 pub mod init;
+pub mod rpc;
 pub mod tool_layer;
 
 pub use arch_facts::{Areas, Column, ColumnRule, Confidence, Level, LinkKind, Witness};
