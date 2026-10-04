@@ -41,6 +41,7 @@ jiff = { version = "0.2", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 tempfile = "3"
 uuid = { version = "1", features = ["v4"] }
+rustix = { version = "1", default-features = false, features = ["std", "process"] }
 pretty_assertions = "1"
 
 # rust-analyzer's internal `never!` checks panic in debug builds and only log in release. A
