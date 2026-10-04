@@ -396,19 +396,38 @@ fn a_file_created_in_a_new_directory_after_load_is_resolved_like_the_others() {
     assert_new_module_resolved(&mut analyzer, &mut store, "x");
 }
 
+/// Write `files`, tell the analyzer each one, and index.
+fn save(analyzer: &mut Analyzer, store: &mut Store, root: &Path, files: &[(&str, &str)]) -> Facts {
+    write(root, files);
+    for (f, _) in files {
+        analyzer.file_changed(Path::new(f)).unwrap();
+    }
+    let key = analyzer.index(store).unwrap();
+    store.facts(&key).unwrap().unwrap()
+}
+
+fn confidence(facts: &Facts, from: &str, to: &str) -> Option<Confidence> {
+    facts
+        .links
+        .iter()
+        .find(|l| l.from == from && l.kind == LinkKind::Calls && l.to == item(to))
+        .map(|l| l.confidence)
+}
+
+const DEMO_WITH_SUB: &str = "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\nmembers = [\"sub\"]\n\n[dependencies]\nsub = { path = \"sub\" }\n";
+
 #[test]
-fn a_file_rust_analyzer_cannot_take_keeps_guessed_links_and_degrades_its_crate() {
+fn a_crate_added_in_cargo_toml_after_load_is_resolved_once_loaded_again() {
     let tmp = tempfile::tempdir().unwrap();
     let (mut analyzer, mut store) = opened_lib(tmp.path());
 
-    // A new member is a new crate: rust-analyzer only sees it after loading again.
-    write(
+    // #60: a new member is a new crate, which rust-analyzer only sees by loading again.
+    let facts = save(
+        &mut analyzer,
+        &mut store,
         tmp.path(),
         &[
-            (
-                "Cargo.toml",
-                "[package]\nname = \"demo\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\nmembers = [\"sub\"]\n\n[dependencies]\nsub = { path = \"sub\" }\n",
-            ),
+            ("Cargo.toml", DEMO_WITH_SUB),
             (
                 "sub/Cargo.toml",
                 "[package]\nname = \"sub\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
@@ -420,26 +439,92 @@ fn a_file_rust_analyzer_cannot_take_keeps_guessed_links_and_degrades_its_crate()
             ("src/lib.rs", "pub fn one() { sub::three() }\n"),
         ],
     );
-    for f in [
-        "Cargo.toml",
-        "sub/Cargo.toml",
-        "sub/src/lib.rs",
-        "src/lib.rs",
-    ] {
-        analyzer.file_changed(Path::new(f)).unwrap();
-    }
-    let key = analyzer.index(&mut store).unwrap();
-    let facts = store.facts(&key).unwrap().unwrap();
-    let link = facts
-        .links
-        .iter()
-        .find(|l| l.from == "sub::three#fn" && l.to == item("sub::four#fn"));
+    let resolved = Some(Confidence::Resolved);
     assert_eq!(
-        link.map(|l| l.confidence),
-        Some(Confidence::Guessed),
-        "{:#?} {:#?}",
-        facts.items.iter().map(|i| &i.id).collect::<Vec<_>>(),
-        facts.crates
+        (
+            confidence(&facts, "demo::one#fn", "sub::three#fn"),
+            confidence(&facts, "sub::three#fn", "sub::four#fn"),
+        ),
+        (resolved, resolved),
+        "{:#?}",
+        facts.links
+    );
+    assert_eq!(analyzer.degraded(), None);
+    assert!(
+        facts.analyzer.degraded.is_empty(),
+        "{:?}",
+        facts.analyzer.degraded
+    );
+}
+
+#[test]
+fn a_reload_that_fails_degrades_with_the_reason_and_the_next_manifest_fix_recovers() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut analyzer, mut store) = opened_lib(tmp.path());
+    let good = std::fs::read_to_string(tmp.path().join("Cargo.toml")).unwrap();
+
+    let broken = good.replace("2021", "2077");
+    let facts = save(
+        &mut analyzer,
+        &mut store,
+        tmp.path(),
+        &[
+            ("Cargo.toml", broken.as_str()),
+            ("src/lib.rs", "pub fn one() { two() }\nfn two() {}\n"),
+        ],
+    );
+    let reasons: Vec<(&str, &str)> = facts
+        .analyzer
+        .degraded
+        .iter()
+        .map(|d| (d.crate_name.as_str(), d.reason.as_str()))
+        .collect();
+    assert!(
+        matches!(reasons.as_slice(), [("demo", r)]
+            if r.starts_with("rust-analyzer could not load the repository:")
+                && r.contains("(loading again after Cargo.toml changed)")),
+        "{reasons:?}"
+    );
+    assert_eq!(
+        confidence(&facts, "demo::one#fn", "demo::two#fn"),
+        Some(Confidence::Guessed)
+    );
+
+    let facts = save(
+        &mut analyzer,
+        &mut store,
+        tmp.path(),
+        &[("Cargo.toml", good.as_str())],
+    );
+    assert_eq!(analyzer.degraded(), None);
+    assert!(facts.analyzer.degraded.is_empty());
+    assert_eq!(
+        confidence(&facts, "demo::one#fn", "demo::two#fn"),
+        Some(Confidence::Resolved)
+    );
+}
+
+#[test]
+fn a_file_rust_analyzer_has_no_module_for_keeps_guessed_links_and_degrades_its_crate() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut analyzer, mut store) = opened_lib(tmp.path());
+
+    // The syntax-level walk follows a module a `cfg` compiles out; rust-analyzer has none.
+    let facts = save(
+        &mut analyzer,
+        &mut store,
+        tmp.path(),
+        &[
+            ("src/gone.rs", "pub fn two() { crate::one() }\n"),
+            (
+                "src/lib.rs",
+                "#[cfg(any())]\npub mod gone;\npub fn one() {}\n",
+            ),
+        ],
+    );
+    assert_eq!(
+        confidence(&facts, "demo::gone::two#fn", "demo::one#fn"),
+        Some(Confidence::Guessed)
     );
     let reasons: Vec<(&str, &str)> = facts
         .analyzer
@@ -450,8 +535,8 @@ fn a_file_rust_analyzer_cannot_take_keeps_guessed_links_and_degrades_its_crate()
     assert_eq!(
         reasons,
         [(
-            "sub",
-            "rust-analyzer has no module for sub/src/lib.rs: links guessed until the analyzer is opened again"
+            "demo",
+            "rust-analyzer has no module for src/gone.rs: links guessed"
         )]
     );
 }

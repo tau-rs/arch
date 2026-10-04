@@ -48,6 +48,12 @@ cargo run -p arch-analyze --example emit-facts -- <repo> [--name <n>] [--commit 
 
 `Depth::Resolved` loads rust-analyzer (the `ra_ap_*` crates, pinned to one exact version) once
 and keeps it: `Analyzer::open`, then `index`, then `file_changed` + `index` for each change.
+rust-analyzer reads the crate graph when it loads, so an `index` that finds a file cargo reads
+changed (a manifest, `Cargo.lock`, `.cargo/config.toml`: a new member, a dependency, a lock
+update) loads it again first, about 4 s on smallsvc (#60). The old instance is dropped before the
+new one loads. When the new load fails, the facts fall back to syntax level with
+`rust-analyzer could not load the repository: <why> (loading again after <files> changed)`,
+until one of those files changes again.
 
 ```mermaid
 flowchart LR
@@ -72,6 +78,8 @@ degrade needs a per-crate signal that it does not expose through this API.
 Budgets (ADR 0026) are benchmarks with thresholds: `cargo bench -p arch-analyze` runs
 `first_index_cold` (< 5 s) and, each < 500 ms from the save on disk, `recompute_body_only`,
 `recompute_declaration` and `recompute_new_file` on smallsvc, and fails when one is crossed.
+`reload_after_manifest` (a `Cargo.toml` save, from the save to the new resolved facts) is held
+to the first index's 5 s: loading rust-analyzer again is a first load of the new crate graph.
 
 ## What the syntax-level pass produces, and how it guesses
 
@@ -116,7 +124,7 @@ them (`const fn` bodies and `const`/`static` initializers kept).
 | Rust files whose fingerprint is unchanged (bodies, comments) | those files only (`Recompute::Files`); every other delta is carried forward under its new key |
 | files that hold no Rust (a migration, a README) | nothing is walked; a migration's tables are read again |
 | a fingerprint, or adds or removes a Rust file | the unit (`Recompute::Unit`) |
-| a manifest, `Cargo.lock`, `.cargo/`, or `areas.toml`'s `main_bin` | the unit, after `cargo metadata` runs again; otherwise the unit plan is reused |
+| a manifest, `Cargo.lock`, `.cargo/config.toml`, or `areas.toml`'s `main_bin` | the unit, after `cargo metadata` runs again and, but for `main_bin`, rust-analyzer loads again; otherwise the unit plan is reused |
 
 Only the changed files are walked and resolved, but the unit is still read whole, since its
 declarations resolve their names. `tests/incremental.rs` (`incremental_equals_cold`) proves the

@@ -106,9 +106,11 @@ impl Batch {
     }
 }
 
-/// Whether facts come from this file (relative to its worktree): Rust sources, manifests and
-/// migrations (`migrations/*.sql`, at any depth). Build output (`target/`) and hidden files and
-/// directories (`.git/`, `.arch/`, an editor's `.#lock`) never are.
+/// Whether facts come from this file (relative to its worktree): Rust sources, migrations
+/// (`migrations/*.sql`, at any depth) and what cargo reads to plan the unit: manifests, lock
+/// files and `.cargo/config.toml` at the top (the analyzer's own rule, so a lock-only change
+/// reaches it). Build output (`target/`) and other hidden files and directories (`.git/`,
+/// `.arch/`, an editor's `.#lock`) never are.
 pub fn is_watched(rel: &Path) -> bool {
     let Some(parts) = parts(rel) else {
         return false;
@@ -119,13 +121,20 @@ pub fn is_watched(rel: &Path) -> bool {
     if !holds_sources(dirs) || name.starts_with('.') {
         return false;
     }
-    *name == "Cargo.toml"
+    if dirs == [CARGO_CONFIG] {
+        return crate::is_plan_input(rel);
+    }
+    crate::is_plan_input(rel)
         || name.ends_with(".rs")
         || (name.ends_with(".sql") && dirs.contains(&"migrations"))
 }
 
+/// Cargo's configuration directory, the one hidden directory files facts come from are in, at
+/// the top of a worktree only.
+const CARGO_CONFIG: &str = ".cargo";
+
 /// Whether files facts come from can be in this directory (relative to its worktree; the
-/// worktree itself is `""`): not under `target/`, not hidden.
+/// worktree itself is `""`): not under `target/`, not hidden but the top `.cargo/`.
 fn is_source_dir(rel: &Path) -> bool {
     parts(rel).is_some_and(|p| holds_sources(&p))
 }
@@ -135,7 +144,8 @@ fn parts(rel: &Path) -> Option<Vec<&str>> {
 }
 
 fn holds_sources(dirs: &[&str]) -> bool {
-    dirs.first() != Some(&"target") && !dirs.iter().any(|p| p.starts_with('.'))
+    dirs == [CARGO_CONFIG]
+        || (dirs.first() != Some(&"target") && !dirs.iter().any(|p| p.starts_with('.')))
 }
 
 /// Whether worktrees are watched directory by directory. inotify (Linux) holds one watch per
@@ -522,6 +532,9 @@ mod tests {
             "src/lib.rs",
             "Cargo.toml",
             "crates/a/Cargo.toml",
+            "Cargo.lock",
+            ".cargo/config.toml",
+            ".cargo/config",
             "migrations/20240101_init.sql",
             "crates/db/migrations/1.sql",
             "src/target.rs",
@@ -531,8 +544,12 @@ mod tests {
         }
         for p in [
             "README.md",
-            "Cargo.lock",
             "schema.sql",
+            ".cargo/credentials.toml",
+            ".cargo/x.rs",
+            ".cargo/registry/cache/x.rs",
+            "crates/a/.cargo/config.toml",
+            "target/Cargo.lock",
             "target/debug/build/x/out/gen.rs",
             ".git/HEAD",
             ".arch/areas.toml",
@@ -574,6 +591,9 @@ mod tests {
         let r = tmp.path().canonicalize().unwrap();
         for p in [
             "Cargo.toml",
+            "Cargo.lock",
+            ".cargo/config.toml",
+            ".cargo/registry/cache/x.rs",
             "README.md",
             "src/lib.rs",
             "src/a.rs",
@@ -611,10 +631,15 @@ mod tests {
         let (_tmp, r, w1) = tree();
         let roots = roots(&[&r, &w1]);
         let outer = scan(&roots, &r);
-        assert_eq!(sorted(outer.dirs), [r.clone(), r.join("src")]);
+        assert_eq!(
+            sorted(outer.dirs),
+            [r.clone(), r.join(".cargo"), r.join("src")]
+        );
         assert_eq!(
             sorted(outer.files),
             [
+                (r.clone(), ".cargo/config.toml".into()),
+                (r.clone(), "Cargo.lock".into()),
                 (r.clone(), "Cargo.toml".into()),
                 (r.clone(), "src/a.rs".into()),
                 (r.clone(), "src/lib.rs".into()),
@@ -641,6 +666,8 @@ mod tests {
             ev(file, r.join("target/debug/build/y/out/gen.rs")),
             ev(folder, w1.join("target")),
             ev(folder, r.join(".git/objects/ef")),
+            ev(folder, r.join(".cargo/registry")),
+            ev(file, r.join(".cargo/credentials.toml")),
             ev(
                 EventKind::Access(notify::event::AccessKind::Any),
                 r.join("src/lib.rs"),
@@ -648,6 +675,15 @@ mod tests {
         ] {
             assert_eq!(intake(&roots, event.clone()), [], "{event:?}");
         }
+        // Cargo's configuration at a worktree's top: watched once it appears.
+        assert_eq!(
+            intake(&roots, ev(folder, r.join(".cargo"))),
+            [Raw::Appeared(r.join(".cargo"))]
+        );
+        assert_eq!(
+            intake(&roots, ev(file, r.join(".cargo/config.toml"))),
+            [Raw::File(r.clone(), ".cargo/config.toml".into())]
+        );
         assert_eq!(
             intake(&roots, ev(folder, w1.join("src/x"))),
             [Raw::Appeared(w1.join("src/x"))]
@@ -683,6 +719,7 @@ mod tests {
         let expected = if PER_DIRECTORY {
             sorted(vec![
                 r.clone(),
+                r.join(".cargo"),
                 r.join("src"),
                 r.join("src/new"),
                 w1.clone(),
@@ -728,7 +765,7 @@ mod tests {
             .map(|b| (b.worktree, b.changes.len()))
             .collect();
         batches.sort();
-        assert_eq!(batches, [(r, 3), (w1, 2)]);
+        assert_eq!(batches, [(r, 5), (w1, 2)]);
         assert_eq!(watcher.recv_timeout(Duration::from_millis(500)), None);
     }
 

@@ -164,10 +164,22 @@ pub struct Analyzer {
 /// `areas.toml` choice of main binary.
 type PlanInputs = (Option<String>, Vec<(PathBuf, ContentHash)>);
 
-fn is_plan_input(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|n| n == "Cargo.toml" || n == "Cargo.lock")
-        || path.starts_with(".cargo")
+/// Whether `cargo metadata` reads this file (repository-relative): a manifest, a lock file, or
+/// cargo's configuration at the top of the repository. A change to one re-reads the plan and
+/// loads rust-analyzer again; the watcher reports exactly these ([`watch::is_watched`]).
+pub(crate) fn is_plan_input(rel: &Path) -> bool {
+    let name = rel.file_name();
+    name.is_some_and(|n| n == "Cargo.toml" || n == "Cargo.lock")
+        || (rel.parent() == Some(Path::new(".cargo"))
+            && name.is_some_and(|n| n == "config.toml" || n == "config"))
+}
+
+/// rust-analyzer loaded at `root`, or why it could not be.
+fn load_session(root: &Path, options: &Options) -> (Option<ra::Session>, Option<String>) {
+    match big_stack(|| ra::Session::load(root, options.target_dir.as_deref())) {
+        Ok(s) => (Some(s), None),
+        Err(e) => (None, Some(format!("{e:#}"))),
+    }
 }
 
 impl Analyzer {
@@ -180,12 +192,7 @@ impl Analyzer {
         })?;
         let (session, load_error) = match options.depth {
             Depth::Syntax => (None, None),
-            Depth::Resolved => {
-                match big_stack(|| ra::Session::load(&root, options.target_dir.as_deref())) {
-                    Ok(s) => (Some(s), None),
-                    Err(e) => (None, Some(format!("{e:#}"))),
-                }
-            }
+            Depth::Resolved => load_session(&root, &options),
         };
         let format = if git::is_repo(&root) {
             package::ObjectFormat::of_repo(&root)
@@ -264,7 +271,7 @@ impl Analyzer {
     /// (`tests/incremental.rs`). [`Analyzer::last_recompute`] says which it was.
     pub fn index(&mut self, store: &mut Store) -> Result<TreeKey, Error> {
         let root = self.root.clone();
-        let options = &self.options;
+        let options = self.options.clone();
         let unit_err = |reason: String| Error::Unit {
             path: root.clone(),
             reason,
@@ -334,7 +341,18 @@ impl Analyzer {
         if plan_changed {
             let plan =
                 cargo::read(&root, main_bin.as_deref()).map_err(|e| unit_err(format!("{e:#}")))?;
+            // rust-analyzer read the crate graph from the files cargo reads when it loaded: one
+            // of them changed since the last index (a new member, a dependency, a lock update).
+            let changed = match &self.plan {
+                Some((before, _)) if self.options.depth == Depth::Resolved => {
+                    changed_paths(&before.1, &inputs.1)
+                }
+                _ => Vec::new(),
+            };
             self.plan = Some((inputs, plan));
+            if !changed.is_empty() {
+                self.reload_session(&format!("{} changed", changed.join(", ")));
+            }
         }
         let plan = self.plan.as_ref().expect("read above").1.clone();
         let only = if plan_changed {
@@ -486,6 +504,17 @@ impl Analyzer {
         Ok(key)
     }
 
+    /// Load rust-analyzer again, `why` being the reason a failure records. The old session is
+    /// dropped first: its crate graph no longer matches the manifests, so it is neither kept
+    /// as a fallback nor held in memory next to the new one. A failure leaves the facts
+    /// syntax-level with the reason (ADR 0009, 0010) until cargo's inputs change again.
+    fn reload_session(&mut self, why: &str) {
+        self.session = None;
+        let (session, load_error) = load_session(&self.root, &self.options);
+        self.session = session;
+        self.load_error = load_error.map(|e| format!("{e} (loading again after {why})"));
+    }
+
     /// The files to analyse when the save since the last index changed function bodies only,
     /// or files that hold no Rust; `None` when the whole unit must be: no last index, a Rust
     /// file added or removed, a declaration changed, or a delta to carry is gone from `store`.
@@ -595,11 +624,22 @@ degraded {}
     }
 }
 
+/// The paths whose content differs between two lists of hashed files, or that only one has.
+fn changed_paths(before: &[(PathBuf, ContentHash)], now: &[(PathBuf, ContentHash)]) -> Vec<String> {
+    let changed: BTreeSet<String> = before
+        .iter()
+        .filter(|f| !now.contains(f))
+        .chain(now.iter().filter(|f| !before.contains(f)))
+        .map(|(p, _)| p.to_string_lossy().replace('\\', "/"))
+        .collect();
+    changed.into_iter().collect()
+}
+
 /// Why a crate's facts are partly guessed while rust-analyzer is loaded: it has no module for
-/// these files, typically because their crate was added after it loaded.
+/// these files, which the syntax-level walk reached (a module a `cfg` compiles out).
 fn unresolved_reason(files: &[String]) -> String {
     format!(
-        "rust-analyzer has no module for {}: links guessed until the analyzer is opened again",
+        "rust-analyzer has no module for {}: links guessed",
         files.join(", ")
     )
 }
@@ -629,7 +669,7 @@ fn branch_commits(root: &Path) -> Vec<arch_facts::Commit> {
 }
 
 /// Files under a directory that is not a git repository: everything but `target/` and
-/// dot-directories other than `.arch/`.
+/// dot-directories other than `.arch/` and the top `.cargo/`.
 fn walk_dir(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![PathBuf::new()];
@@ -642,7 +682,9 @@ fn walk_dir(root: &Path) -> Vec<PathBuf> {
             let rel = dir.join(&name);
             match e.file_type() {
                 Ok(t) if t.is_dir() => {
-                    if name != "target" && (!name.starts_with('.') || name == ".arch") {
+                    let top_cargo = dir.as_os_str().is_empty() && name == ".cargo";
+                    if name != "target" && (!name.starts_with('.') || name == ".arch" || top_cargo)
+                    {
                         stack.push(rel);
                     }
                 }

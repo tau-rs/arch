@@ -120,6 +120,14 @@ const COMMENT: Edit = Edit {
     expect: Expect::File,
 };
 
+const MANIFEST: Edit = Edit {
+    name: "manifest: Cargo.toml saved (rust-analyzer loads again at resolved depth)",
+    file: "Cargo.toml",
+    find: "publish = false\n",
+    replace: "publish = false\nrust-version = \"1.80\"\n",
+    expect: Expect::Unit,
+};
+
 fn options(depth: Depth) -> Options {
     Options {
         depth,
@@ -234,6 +242,7 @@ fn incremental_equals_cold_for_every_kind_of_save_and_its_undo() {
             NESTED_ITEM,
             MIGRATION,
             COMMENT,
+            MANIFEST,
         ],
         true,
     );
@@ -263,7 +272,7 @@ fn nothing_changed_reindexes_nothing() {
 fn incremental_equals_cold_at_resolved_depth() {
     run(
         Depth::Resolved,
-        &[PAY_BODY, CONNECT_REEXPORTED, UNROUTE_HEALTH],
+        &[PAY_BODY, MANIFEST, CONNECT_REEXPORTED, UNROUTE_HEALTH],
         false,
     );
 }

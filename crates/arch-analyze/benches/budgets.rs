@@ -6,6 +6,7 @@
 //! | `recompute_body_only` | < 500 ms | one source file saved, function bodies only: that file is re-analysed, the others carried forward (ADR 0002); from the save on disk, through the watcher's debounce, to the new facts |
 //! | `recompute_declaration` | < 500 ms | one source file saved with a new declaration: the unit is re-analysed; same span |
 //! | `recompute_new_file` | < 500 ms | a new module file and the `mod` line reaching it; same span |
+//! | `reload_after_manifest` | < 5 s | `Cargo.toml` saved: rust-analyzer loads again (#60), held to the first index's budget; same span, to resolved facts with nothing degraded |
 //!
 //! Runs on a copy of `repos/smallsvc` from the fixtures pin (`scripts/fetch-fixtures.sh`), with
 //! `CARGO_TARGET_DIR` pointing at a directory this benchmark builds once, outside the timing.
@@ -224,6 +225,38 @@ fn main() -> ExitCode {
         }
     };
 
+    // A manifest: rust-analyzer reads the crate graph again. Last, since its load may write
+    // `Cargo.lock` back, which is a batch of its own.
+    let manifest = Path::new("Cargo.toml");
+    let text = std::fs::read_to_string(repo.join(manifest))
+        .unwrap()
+        .replacen(
+            "publish = false\n",
+            "publish = false\nrust-version = \"1.80\"\n",
+            1,
+        );
+    let reload = match save_and_apply(
+        &repo,
+        &watcher,
+        &mut analyzer,
+        &mut store,
+        &[(manifest, text)],
+        Recompute::Unit,
+        &|facts: &Facts| {
+            facts.analyzer.degraded.is_empty()
+                && facts
+                    .links
+                    .iter()
+                    .any(|l| l.confidence == Confidence::Resolved)
+        },
+    ) {
+        Ok(took) => took,
+        Err(e) => {
+            eprintln!("reload_after_manifest: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     // The numbers hold on the reference machine (ADR 0026). A slower machine, such as a shared
     // CI runner, states its factor instead of pretending to be it.
     let scale: f64 = std::env::var("ARCH_BUDGET_SCALE")
@@ -239,6 +272,7 @@ fn main() -> ExitCode {
         ("recompute_body_only", body_only, RECOMPUTE_ONE_FILE),
         ("recompute_declaration", declaration, RECOMPUTE_ONE_FILE),
         ("recompute_new_file", new_file, RECOMPUTE_ONE_FILE),
+        ("reload_after_manifest", reload, FIRST_INDEX_COLD),
     ] {
         let budget = budget.mul_f64(scale);
         let verdict = if took < budget { "ok" } else { "OVER BUDGET" };
