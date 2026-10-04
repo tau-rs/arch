@@ -42,3 +42,10 @@ clap = { version = "4", features = ["derive"] }
 tempfile = "3"
 uuid = { version = "1", features = ["v4"] }
 pretty_assertions = "1"
+
+# rust-analyzer's internal `never!` checks panic in debug builds and only log in release. A
+# pinned cross target (ADR 0030) trips one in the build-script run: cargo reports a host-only
+# build dependency (`core-foundation-sys` checking for Linux on macOS) that the target-filtered
+# metadata does not list. Debug builds analyse as release ones do.
+[profile.dev.package.ra_ap_project_model]
+debug-assertions = false
