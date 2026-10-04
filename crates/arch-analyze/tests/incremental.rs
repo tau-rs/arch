@@ -288,20 +288,28 @@ fn incremental_equals_cold_at_resolved_depth() {
     );
 }
 
-/// A workspace of four packages: `app` (the bin) uses `leaf` and `side`, which both use `base`.
+/// A workspace of four packages: `app` (the bin) uses `leaf` and `side`, which both use `base`;
+/// `leaf`'s tests use `side` (a dev-dependency).
 ///
 /// ```text
 /// app ──► leaf ──► base
-///  └────► side ──┘
+///  │       ┆ dev   ▲
+///  └────► side ───┘
 /// ```
 fn workspace() -> (tempfile::TempDir, PathBuf) {
     let tmp = tempfile::tempdir().unwrap();
     let repo = tmp.path().join("shop");
-    let manifest = |name: &str, deps: &[&str]| {
+    let manifest = |name: &str, deps: &[&str], dev: &[&str]| {
         let mut m = format!(
             "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n"
         );
         for d in deps {
+            m.push_str(&format!("{d} = {{ path = \"../{d}\" }}\n"));
+        }
+        if !dev.is_empty() {
+            m.push_str("\n[dev-dependencies]\n");
+        }
+        for d in dev {
             m.push_str(&format!("{d} = {{ path = \"../{d}\" }}\n"));
         }
         m
@@ -312,22 +320,22 @@ fn workspace() -> (tempfile::TempDir, PathBuf) {
             "[workspace]\nmembers = [\"app\", \"base\", \"leaf\", \"side\"]\nresolver = \"2\"\n"
                 .to_string(),
         ),
-        ("app/Cargo.toml", manifest("app", &["base", "leaf", "side"])),
+        ("app/Cargo.toml", manifest("app", &["base", "leaf", "side"], &[])),
         (
             "app/src/main.rs",
             "fn main() {\n    let n = leaf::leaf_fn() + side::side_fn();\n    base::Thing::new().size(n);\n}\n".into(),
         ),
-        ("base/Cargo.toml", manifest("base", &[])),
+        ("base/Cargo.toml", manifest("base", &[], &[])),
         (
             "base/src/lib.rs",
             "pub struct Thing;\n\nimpl Thing {\n    pub fn new() -> Thing {\n        Thing\n    }\n\n    pub fn size(&self, n: u32) -> u32 {\n        n\n    }\n}\n\npub fn base_fn() -> u32 {\n    1\n}\n\npub fn use_thing() {\n    let t = Thing::new();\n    t.ping();\n}\n".into(),
         ),
-        ("leaf/Cargo.toml", manifest("leaf", &["base"])),
+        ("leaf/Cargo.toml", manifest("leaf", &["base"], &["side"])),
         (
             "leaf/src/lib.rs",
-            "pub fn leaf_fn() -> u32 {\n    base::base_fn()\n}\n".into(),
+            "pub fn leaf_fn() -> u32 {\n    base::base_fn()\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn sums() {\n        assert_eq!(super::leaf_fn() + side::side_fn(), 3);\n    }\n}\n".into(),
         ),
-        ("side/Cargo.toml", manifest("side", &["base"])),
+        ("side/Cargo.toml", manifest("side", &["base"], &[])),
         (
             "side/src/lib.rs",
             // `side` names `leaf` without depending on it, as code being edited can.
@@ -362,6 +370,13 @@ const BASE_FN: Edit = Edit {
     find: "pub fn base_fn() -> u32 {\n    1\n",
     replace: "pub fn base_fn() -> u32 {\n    base_two()\n}\n\npub fn base_two() -> u32 {\n    2\n",
     expect: Expect::Packages(&["app", "base", "leaf", "side"]),
+};
+const SIDE_FN: Edit = Edit {
+    name: "declaration in a package whose only dependent besides the bin is `leaf`'s tests",
+    file: "side/src/lib.rs",
+    find: "pub fn side_fn() -> u32 {\n",
+    replace: "pub fn side_more() -> u32 {\n    3\n}\n\npub fn side_fn() -> u32 {\n",
+    expect: Expect::Packages(&["app", "leaf", "side"]),
 };
 const SIDE_BODY: Edit = Edit {
     name: "body in a package nothing but the bin depends on",
@@ -401,6 +416,12 @@ fn a_crate_sees_only_the_packages_it_depends_on() {
     // `side` does not depend on `leaf`: `leaf::leaf_more` is not a unit item to it.
     let side = from("side::not_a_dependency#fn");
     assert!(!side.iter().any(|l| l.contains("leaf")), "{side:?}");
+    // `leaf`'s tests use `side`, a dev-dependency.
+    let test = from("leaf::tests::sums#fn");
+    assert!(
+        test.iter().any(|l| l.contains("side::side_fn#fn")),
+        "{test:?}"
+    );
     // `app` depends on both and sees them.
     let app = from("app[bin:app]::main#fn");
     assert!(
@@ -415,7 +436,7 @@ fn incremental_equals_cold_across_packages() {
     run_on(
         &repo,
         Depth::Syntax,
-        &[LEAF_FN, LEAF_IMPL, BASE_FN, SIDE_BODY, APP_FN],
+        &[LEAF_FN, LEAF_IMPL, BASE_FN, SIDE_FN, SIDE_BODY, APP_FN],
         true,
     );
 }
