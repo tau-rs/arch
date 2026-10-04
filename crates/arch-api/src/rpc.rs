@@ -105,3 +105,87 @@ fn method<P: JsonSchema, R: JsonSchema>(
         "result": { "name": R::schema_name(), "schema": generator.subschema_for::<R>() },
     })
 }
+
+/// `initialize`: the engine's version and [`API_SCHEMA_VERSION`], whatever the client sent.
+pub fn initialize(_params: InitializeParams) -> InitializeResult {
+    InitializeResult {
+        engine_version: env!("CARGO_PKG_VERSION").into(),
+        schema_version: API_SCHEMA_VERSION.into(),
+    }
+}
+
+/// A JSON-RPC 2.0 error: one of the standard codes, or arch's own in `-32000..=-32099`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RpcError {
+    /// The error code.
+    pub code: i64,
+    /// What went wrong, for a person.
+    pub message: String,
+}
+
+impl RpcError {
+    const PARSE: i64 = -32700;
+    const INVALID_REQUEST: i64 = -32600;
+    const METHOD_NOT_FOUND: i64 = -32601;
+    const INVALID_PARAMS: i64 = -32602;
+
+    fn new(code: i64, message: impl Into<String>) -> Self {
+        RpcError {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
+/// Run one method of the app method set: the handlers every transport shares (ADR 0034).
+pub fn dispatch(method: &str, params: Value) -> Result<Value, RpcError> {
+    match method {
+        "initialize" => {
+            let params = serde_json::from_value(params)
+                .map_err(|e| RpcError::new(RpcError::INVALID_PARAMS, format!("initialize: {e}")))?;
+            Ok(serde_json::to_value(initialize(params)).expect("the result serializes"))
+        }
+        other => Err(RpcError::new(
+            RpcError::METHOD_NOT_FOUND,
+            format!("no method {other:?} in arch-api {API_SCHEMA_VERSION}"),
+        )),
+    }
+}
+
+/// One line of the socket protocol in, the reply line out: `None` for a blank line or a
+/// notification, which get no reply (ADR 0034 §2).
+pub fn handle_line(line: &str) -> Option<String> {
+    if line.trim().is_empty() {
+        return None;
+    }
+    let reply = match serde_json::from_str::<Value>(line) {
+        Err(e) => error_reply(Value::Null, RpcError::new(RpcError::PARSE, e.to_string())),
+        Ok(request) => {
+            let id = request.get("id").cloned();
+            let method = request.get("method").and_then(Value::as_str);
+            match (request.get("jsonrpc").and_then(Value::as_str), method, id) {
+                (Some("2.0"), Some(method), Some(id)) => {
+                    let params = request.get("params").cloned().unwrap_or(Value::Null);
+                    match dispatch(method, params) {
+                        Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+                        Err(e) => error_reply(id, e),
+                    }
+                }
+                // a notification: nothing the client sends is one yet, and none gets a reply
+                (Some("2.0"), Some(_), None) => return None,
+                (_, _, id) => error_reply(
+                    id.unwrap_or(Value::Null),
+                    RpcError::new(
+                        RpcError::INVALID_REQUEST,
+                        "not a JSON-RPC 2.0 request (one object per line, no batches)",
+                    ),
+                ),
+            }
+        }
+    };
+    Some(reply.to_string())
+}
+
+fn error_reply(id: Value, e: RpcError) -> Value {
+    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": e.code, "message": e.message } })
+}
