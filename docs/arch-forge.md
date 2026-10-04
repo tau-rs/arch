@@ -36,7 +36,7 @@ for a branch the forge has never seen. Agents never push; the tool layer denies 
 | `Check` | name · state `Pending \| Passed \| Failed \| Skipped` · url |
 | `Reviewer` | name (`org/team` for a team) · team · state `Requested \| Approved \| ChangesRequested \| Commented` |
 | `Strategy` | `Merge \| Squash \| Rebase` |
-| `ForgeError` | `NoToken` · `NotGitHub` · `Push` · `Rejected { status, message }` · `Transport` · `Decode` |
+| `ForgeError` | `NoToken` · `NotGitHub` · `Push` · `Rejected { status, message }` · `NoPermission` · `Transport` · `Decode` |
 
 ### Checks
 
@@ -45,26 +45,30 @@ A check-run that is not `completed` is pending; `success` passes; `neutral` and 
 skipped; anything else (failure, timed out, cancelled, action required) fails. A status is
 `success`, `pending`, or failed (`failure`, `error`). GitHub's combined status reads `pending`
 when a commit has no statuses at all, so it is never used. `summary(&checks)` folds the list:
-any failed → failed, else any pending → pending, else passed.
+any failed → failed, else any pending → pending, else passed. An empty list is `None`, not
+passed. Either the repo has no CI, or the forge has not registered its checks in the seconds after
+a push, and only the caller can tell which.
 
 ### Reviewers
 
 Requested people come first, then everyone who reviewed, in order of their first review, then
-requested teams. A person still in `requested_reviewers` is `Requested` whatever they said before
+requested teams. Only the first 100 reviews and check-runs are read (no pagination yet, #76). A person still in `requested_reviewers` is `Requested` whatever they said before
 (a re-request). Otherwise the latest approval or change request wins; a later comment does not undo
 it, a dismissal does. `PENDING` reviews (a draft nobody else sees) are ignored.
 
 ### Errors
 
 Any non-2xx answer is `Rejected { status, message }` with GitHub's `message` (and a 422's
-validation details). Merging with a strategy the repo does not allow is a 405. Merging after the
-head moved is a 409. Both surface through the status bar and the Checks row, never a modal
+validation details). A non-JSON error page, such as a proxy's HTML 502, keeps its status. Merging with a strategy the repo does not allow is a 405. Merging after the
+head moved is a 409. `strategies()` returns `NoPermission` when GitHub hides the `allow_*` fields, which it does for a
+token without push access. An empty list would claim the repo allows nothing. Such a token could
+not merge anyway. Errors surface through the status bar and the Checks row, never a modal
 (ADR 0023).
 
 ## Repository and token
 
 `GitHub::open(workdir)` reads owner and repo from `git remote get-url origin`: `https://github.com/o/r(.git)`
-(credentials in the URL are ignored), `git@github.com:o/r(.git)`, or `ssh://git@github.com(:port)/o/r(.git)`.
+(credentials in the URL are ignored), `git@github.com:o/r(.git)`, or `ssh://git@github.com(:port)/o/r(.git)`. The host may also be `ssh.github.com`, GitHub's SSH over port 443.
 Any other host is `NotGitHub`.
 
 The token is resolved once, when the transport is built, in this order. A source that is unset,

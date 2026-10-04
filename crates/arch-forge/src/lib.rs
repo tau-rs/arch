@@ -45,6 +45,12 @@ pub enum ForgeError {
         /// The forge's message.
         message: String,
     },
+    /// The token may not read something it needs, e.g. the merge settings without push access.
+    #[error("forge: the token cannot read {what}; it needs push access to the repository")]
+    NoPermission {
+        /// What could not be read.
+        what: String,
+    },
     /// The request did not reach the forge, or no recorded answer matched it.
     #[error("forge: transport: {0}")]
     Transport(String),
@@ -124,17 +130,21 @@ pub enum CheckState {
     Skipped,
 }
 
-/// The checks folded into one state: any failed → failed, else any pending → pending, else passed
-/// (no checks at all is passed).
-pub fn summary(checks: &[Check]) -> CheckState {
+/// The checks folded into one state: any failed → failed, else any pending → pending, else passed.
+/// `None` when nothing is reported: the repo has no CI, or right after a push the forge has not
+/// registered its checks yet. The caller tells the two apart.
+pub fn summary(checks: &[Check]) -> Option<CheckState> {
+    if checks.is_empty() {
+        return None;
+    }
     let any = |state| checks.iter().any(|c| c.state == state);
-    if any(CheckState::Failed) {
+    Some(if any(CheckState::Failed) {
         CheckState::Failed
     } else if any(CheckState::Pending) {
         CheckState::Pending
     } else {
         CheckState::Passed
-    }
+    })
 }
 
 /// A person or team asked to review, and their latest verdict.

@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use arch_forge::{ForgeError, TokenSource, resolve_token};
 use pretty_assertions::assert_eq;
@@ -18,39 +19,55 @@ fn script(dir: &Path, name: &str, body: &str) {
 
 /// A `PATH` holding a fake `gh` and fake keychain tools (`security` on macOS, `secret-tool` on
 /// Linux), each answering only for the exact arguments arch must pass.
-fn fake_path(keychain: bool, gh: bool) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+fn write_fakes(dir: &Path, keychain: bool, gh: bool) {
     if keychain {
         script(
-            dir.path(),
+            dir,
             "security",
             r#"[ "$*" = "find-generic-password -s arch -a github -w" ] && echo from-keychain && exit 0; exit 44"#,
         );
         script(
-            dir.path(),
+            dir,
             "secret-tool",
             r#"[ "$*" = "lookup service arch account github" ] && echo from-keychain && exit 0; exit 1"#,
         );
     }
     if gh {
         script(
-            dir.path(),
+            dir,
             "gh",
             r#"[ "$*" = "auth token" ] && echo ' from-gh ' && exit 0; exit 1"#,
         );
     }
-    dir
 }
 
-fn resolve(
-    env: &[(&str, &str)],
-    path: &tempfile::TempDir,
-) -> Result<(String, TokenSource), ForgeError> {
+/// Every fake `PATH`, written once before any test spawns: on Linux, a script still open for
+/// writing in one test thread's fork fails another thread's exec with ETXTBSY.
+fn fake_path(keychain: bool, gh: bool) -> &'static Path {
+    static DIRS: OnceLock<Vec<(bool, bool, tempfile::TempDir)>> = OnceLock::new();
+    let dirs = DIRS.get_or_init(|| {
+        [(true, true), (false, true), (false, false)]
+            .into_iter()
+            .map(|(k, g)| {
+                let dir = tempfile::tempdir().unwrap();
+                write_fakes(dir.path(), k, g);
+                (k, g, dir)
+            })
+            .collect()
+    });
+    let (_, _, dir) = dirs
+        .iter()
+        .find(|(k, g, _)| (*k, *g) == (keychain, gh))
+        .unwrap();
+    dir.path()
+}
+
+fn resolve(env: &[(&str, &str)], path: &Path) -> Result<(String, TokenSource), ForgeError> {
     let env: HashMap<String, String> = env
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-    let token = resolve_token(|k| env.get(k).cloned(), Some(path.path().as_os_str()))?;
+    let token = resolve_token(|k| env.get(k).cloned(), Some(path.as_os_str()))?;
     Ok((token.secret().to_string(), token.source()))
 }
 
@@ -97,7 +114,7 @@ fn the_token_never_shows_in_debug_output() {
     let path = fake_path(false, false);
     let token = resolve_token(
         |k| (k == "GH_TOKEN").then(|| "ghp_secret".to_string()),
-        Some(path.path().as_os_str()),
+        Some(path.as_os_str()),
     )
     .unwrap();
     assert!(!format!("{token:?}").contains("ghp_secret"));

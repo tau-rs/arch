@@ -151,7 +151,7 @@ fn checks_passed() {
             .starts_with("https://github.com/tau-rs/arch/actions/runs/")
     );
     // No statuses at all reads as passed, although GitHub's combined `state` says pending.
-    assert_eq!(summary(&checks), CheckState::Passed);
+    assert_eq!(summary(&checks), Some(CheckState::Passed));
 }
 
 #[test]
@@ -161,14 +161,14 @@ fn checks_failed() {
         checks.iter().find(|c| c.name == "check").unwrap().state,
         CheckState::Failed
     );
-    assert_eq!(summary(&checks), CheckState::Failed);
+    assert_eq!(summary(&checks), Some(CheckState::Failed));
 }
 
 #[test]
 fn checks_pending() {
     let checks = checks_for("abc", "check-runs-pending.json", "status-none.json");
     assert_eq!(checks[0].state, CheckState::Pending);
-    assert_eq!(summary(&checks), CheckState::Pending);
+    assert_eq!(summary(&checks), Some(CheckState::Pending));
 }
 
 #[test]
@@ -180,25 +180,26 @@ fn checks_include_commit_statuses_from_other_ci() {
         external.url.as_deref(),
         Some("https://ci.example.com/1000/output")
     );
-    assert_eq!(summary(&checks), CheckState::Failed);
+    assert_eq!(summary(&checks), Some(CheckState::Failed));
 }
 
 #[test]
-fn summary_of_nothing_is_passed_and_skipped_never_fails() {
+fn summary_of_nothing_is_unknown_and_skipped_never_fails() {
     use arch_forge::Check;
     let c = |state| Check {
         name: "x".into(),
         state,
         url: None,
     };
-    assert_eq!(summary(&[]), CheckState::Passed);
+    // Nothing reported: no CI, or checks not registered yet right after a push. The caller decides.
+    assert_eq!(summary(&[]), None);
     assert_eq!(
         summary(&[c(CheckState::Skipped), c(CheckState::Passed)]),
-        CheckState::Passed
+        Some(CheckState::Passed)
     );
     assert_eq!(
         summary(&[c(CheckState::Pending), c(CheckState::Failed)]),
-        CheckState::Failed
+        Some(CheckState::Failed)
     );
 }
 
@@ -271,6 +272,22 @@ fn strategies_are_read_from_the_repo() {
     repo_json["allow_rebase_merge"] = json!(false);
     let forge = github(Recorded::new().on(Method::Get, "/repos/tau-rs/arch", 200, repo_json));
     assert_eq!(forge.strategies().unwrap(), [Strategy::Squash]);
+}
+
+#[test]
+fn strategies_hidden_from_the_token_are_not_read_as_none_allowed() {
+    // GitHub omits the allow_* fields for a token without push access.
+    let mut repo_json = fixture("repo.json");
+    for field in [
+        "allow_merge_commit",
+        "allow_squash_merge",
+        "allow_rebase_merge",
+    ] {
+        repo_json.as_object_mut().unwrap().remove(field);
+    }
+    let forge = github(Recorded::new().on(Method::Get, "/repos/tau-rs/arch", 200, repo_json));
+    let err = forge.strategies().unwrap_err();
+    assert!(matches!(err, ForgeError::NoPermission { .. }), "{err:?}");
 }
 
 #[test]
@@ -439,6 +456,8 @@ fn owner_and_repo_come_from_the_remote_url() {
         "git@github.com:tau-rs/arch.git",
         "ssh://git@github.com/tau-rs/arch.git",
         "ssh://git@github.com:22/tau-rs/arch",
+        "ssh://git@ssh.github.com:443/tau-rs/arch.git",
+        "git@github.com:/tau-rs/arch.git",
     ] {
         assert_eq!(RepoRef::from_remote(url), Some(repo()), "{url}");
     }

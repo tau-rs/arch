@@ -48,10 +48,12 @@ impl RepoRef {
                 (host.rsplit('@').next()?, path)
             }
         };
-        if !host.eq_ignore_ascii_case("github.com") {
+        // ssh.github.com is GitHub's SSH over port 443.
+        if !host.eq_ignore_ascii_case("github.com") && !host.eq_ignore_ascii_case("ssh.github.com")
+        {
             return None;
         }
-        let path = path.trim_end_matches('/');
+        let path = path.trim_matches('/');
         let path = path.strip_suffix(".git").unwrap_or(path);
         match path.split('/').collect::<Vec<_>>()[..] {
             [owner, name] if !owner.is_empty() && !name.is_empty() => {
@@ -262,12 +264,9 @@ struct ReviewJson {
 
 #[derive(Deserialize)]
 struct RepoJson {
-    #[serde(default)]
-    allow_merge_commit: bool,
-    #[serde(default)]
-    allow_squash_merge: bool,
-    #[serde(default)]
-    allow_rebase_merge: bool,
+    allow_merge_commit: Option<bool>,
+    allow_squash_merge: Option<bool>,
+    allow_rebase_merge: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -427,16 +426,23 @@ impl<T: Transport> Forge for GitHub<T> {
     }
 
     fn strategies(&self) -> Result<Vec<Strategy>, ForgeError> {
-        // GitHub only returns the allow_* fields to tokens that can push; absent reads as not allowed.
+        // GitHub only returns the allow_* fields to tokens that can push: absent is unknown, not
+        // "none allowed".
         let repo: RepoJson = self.call(Method::Get, "", None)?;
-        Ok([
+        let fields = [
             (repo.allow_merge_commit, Strategy::Merge),
             (repo.allow_squash_merge, Strategy::Squash),
             (repo.allow_rebase_merge, Strategy::Rebase),
-        ]
-        .into_iter()
-        .filter_map(|(allowed, s)| allowed.then_some(s))
-        .collect())
+        ];
+        if fields.iter().all(|(allowed, _)| allowed.is_none()) {
+            return Err(ForgeError::NoPermission {
+                what: "the repository's merge settings".into(),
+            });
+        }
+        Ok(fields
+            .into_iter()
+            .filter_map(|(allowed, s)| (allowed == Some(true)).then_some(s))
+            .collect())
     }
 
     fn request_word(&self) -> &'static str {

@@ -126,16 +126,43 @@ impl Transport for Ureq {
         let text = response.body_mut().read_to_string().map_err(|e| {
             ForgeError::Transport(format!("{} {}: {e}", request.method, request.path))
         })?;
-        let body = if text.trim().is_empty() {
-            Value::Null
-        } else {
-            serde_json::from_str(&text).map_err(|e| {
-                ForgeError::Decode(format!("{} {}: {e}", request.method, request.path))
-            })?
-        };
+        let body = body_of(status, &text)
+            .map_err(|e| ForgeError::Decode(format!("{} {}: {e}", request.method, request.path)))?;
         Ok(HttpResponse { status, body })
+    }
+}
+
+/// The JSON body. An error status keeps its status even when the body is not JSON (a proxy's
+/// HTML 502); a 2xx answer must be JSON.
+fn body_of(status: u16, text: &str) -> Result<Value, serde_json::Error> {
+    if text.trim().is_empty() {
+        return Ok(Value::Null);
+    }
+    match serde_json::from_str(text) {
+        Err(_) if !(200..300).contains(&status) => Ok(Value::Null),
+        parsed => parsed,
     }
 }
 
 const ACCEPT: &str = "application/vnd.github+json";
 const VERSION: &str = "2022-11-28";
+
+#[cfg(test)]
+mod tests {
+    use super::body_of;
+    use serde_json::{Value, json};
+
+    #[test]
+    fn an_html_error_page_keeps_its_status() {
+        assert_eq!(
+            body_of(502, "<html>Bad gateway</html>").unwrap(),
+            Value::Null
+        );
+        assert!(body_of(200, "<html>").is_err());
+        assert_eq!(body_of(204, "").unwrap(), Value::Null);
+        assert_eq!(
+            body_of(404, r#"{"message": "Not Found"}"#).unwrap(),
+            json!({"message": "Not Found"})
+        );
+    }
+}
