@@ -22,6 +22,8 @@ struct World {
     root: PathBuf,
     repo: PathBuf,
     origin: PathBuf,
+    /// How many of [`FILES`] the plan's elements write, one each.
+    n: usize,
 }
 
 const FILES: [&str; 4] = [
@@ -31,8 +33,9 @@ const FILES: [&str; 4] = [
     "src/adapters/memory/refunds.rs",
 ];
 
-/// smallsvc copied into a fresh git repo whose `origin` is a local bare repository.
-fn world() -> World {
+/// smallsvc copied into a fresh git repo whose `origin` is a local bare repository; plans of `n`
+/// elements.
+fn world(n: usize) -> World {
     let src = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/arch-fixtures/repos/smallsvc");
     assert!(
@@ -61,6 +64,7 @@ fn world() -> World {
         root,
         repo,
         origin,
+        n,
     }
 }
 
@@ -72,7 +76,7 @@ impl World {
             .args(args)
             .current_dir(&self.repo)
             .env("ARCH_WORKTREE_PARENT", self.root.join("wt"))
-            .env("ARCH_TEST_COMMAND", gate_command())
+            .env("ARCH_TEST_COMMAND", gate_command(self.n))
             .env_remove("ARCH_DRIVER")
             .env_remove("ARCH_FORGE");
         for (k, v) in env {
@@ -103,7 +107,7 @@ impl World {
         d
     }
 
-    /// A plan file with the four elements, all independent: one group.
+    /// A plan file with `n` elements, all independent: one group.
     fn plan_file(&self) -> PathBuf {
         let intentions = [
             "add Refund to the domain",
@@ -114,6 +118,7 @@ impl World {
         let text: String = intentions
             .iter()
             .zip(FILES)
+            .take(self.n)
             .map(|(i, f)| {
                 format!("[[element]]\nintention = \"{i}\"\nsite = \"{f}\"\nfiles = [\"{f}\"]\n\n")
             })
@@ -130,7 +135,10 @@ impl World {
             &["new", "add a refund flow", "--plan", plan.to_str().unwrap()],
             &[],
         );
-        assert!(out.contains("4 element(s), 1 group(s)"), "{out}");
+        assert!(
+            out.contains(&format!("{} element(s), 1 group(s)", self.n)),
+            "{out}"
+        );
         assert!(out.contains("draft in the cache"), "{out}");
         out.split_whitespace().nth(1).unwrap().to_string()
     }
@@ -145,11 +153,12 @@ impl World {
     }
 }
 
-/// The gate's command: the four files exist. (smallsvc's own `cargo test` pulls axum and sqlx,
-/// too slow and networked for the default CI; `arch check` and the judge run for real.)
-fn gate_command() -> String {
+/// The gate's command: the elements' files exist. (smallsvc's own `cargo test` pulls axum and
+/// sqlx, too slow and networked for the default CI; `arch check` and the judge run for real.)
+fn gate_command(n: usize) -> String {
     FILES
         .iter()
+        .take(n)
         .map(|f| format!("test -f {f}"))
         .collect::<Vec<_>>()
         .join(" && ")
@@ -249,7 +258,7 @@ fn pulls_path(id: &str) -> String {
 
 #[test]
 fn one_delegated_session_end_to_end_then_merge_archives_it() {
-    let w = world();
+    let w = world(4);
     let id = w.new_session();
     assert_eq!(w.status(&id)["state"], "planning");
     let ids = w.element_ids(&id);
@@ -463,4 +472,270 @@ fn git_status(dir: &Path, args: &[&str]) -> Result<String, String> {
 
 fn git(dir: &Path, args: &[&str]) -> String {
     git_status(dir, args).unwrap_or_else(|e| panic!("git {args:?}: {e}"))
+}
+
+// ---------------------------------------------------------------- the other doors
+
+fn selector(kind: &str, dir: &Path) -> PathBuf {
+    PathBuf::from(format!("{kind}:{}", dir.display()))
+}
+
+/// A text-only turn: a resumed agent that says it is done.
+fn quiet_turn(sid: &str) -> String {
+    turn(sid, &[], None)
+}
+
+fn thread(w: &World, id: &str) -> String {
+    std::fs::read_to_string(
+        w.root
+            .join("wt/smallsvc-w1/.arch/sessions")
+            .join(id)
+            .join("thread.jsonl"),
+    )
+    .unwrap()
+}
+
+#[test]
+fn the_planner_drafts_and_new_delegate_runs_in_one_process() {
+    let w = world(4);
+    let planned: Vec<Value> = FILES
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            json!({ "intention": format!("refund step {}", i + 1), "site": f,
+            "files": [f], "depends_on": if i == 3 { json!(["E1"]) } else { json!([]) } })
+        })
+        .collect();
+    let mut turns = vec![turn(
+        "planner-1",
+        &[("Read", json!({ "file_path": "src/lib.rs" }))],
+        Some(json!({ "elements": planned })),
+    )];
+    turns.extend((1..=3).map(element_turn));
+    // E4 depends on E1: two groups, two gates; the judge answers by label.
+    let labels = |ls: &[&str]| ls.iter().map(|l| l.to_string()).collect::<Vec<_>>();
+    turns.push(judge_turn(&labels(&["E1", "E2", "E3"]), true));
+    turns.push(element_turn(4));
+    turns.push(judge_turn(&labels(&["E4"]), true));
+    let replay = replay_dir(&w, "replay", &turns);
+
+    // Each gate's command passes: the files of group 2 do not exist at group 1's gate.
+    let out = w.ok(
+        &["new", "add a refund flow", "--delegate"],
+        &[
+            ("ARCH_DRIVER", &selector("replay", &replay)),
+            ("ARCH_TEST_COMMAND", Path::new("true")),
+        ],
+    );
+    assert!(out.contains("4 element(s), 2 group(s)"), "{out}");
+    assert!(out.contains("E4 "), "{out}");
+    assert!(
+        out.contains("running group 2/2 · E1 E2 E3 E4 done"),
+        "{out}"
+    );
+    assert_eq!(out.matches("gate · ").count(), 2, "{out}");
+    let id = out.split_whitespace().nth(1).unwrap().to_string();
+    assert_eq!(w.status(&id)["state"], "done");
+
+    // The thread starts with the intention and the planner's turn, then Accept.
+    let thread = thread(&w, &id);
+    let first: Vec<Value> = thread
+        .lines()
+        .take(3)
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(first[0]["author"]["role"], "you");
+    assert_eq!(first[0]["text"], "add a refund flow");
+    assert_eq!(first[1]["author"]["role"], "planner");
+    assert!(thread.contains("accepted · branch"));
+    assert!(
+        !w.repo
+            .join(format!(".arch/cache/drafts/{id}.thread.jsonl"))
+            .exists(),
+        "the planner thread left the cache at Accept"
+    );
+}
+
+#[test]
+fn an_ask_is_answered_in_a_second_process() {
+    let w = world(1);
+    let id = w.new_session();
+    let ask = turn(
+        "agent-1",
+        &[(
+            "mcp__arch__ask",
+            json!({ "questions": [{ "text": "Refunds in cents or in units?",
+                                    "options": ["cents", "units"] }] }),
+        )],
+        None,
+    );
+    let replay = replay_dir(&w, "replay-1", &[ask]);
+    let out = w.ok(
+        &["accept", &id, "--delegate"],
+        &[("ARCH_DRIVER", &selector("replay", &replay))],
+    );
+    assert!(
+        out.contains("asks\n  ? Refunds in cents or in units?\n    - cents"),
+        "{out}"
+    );
+    assert!(out.contains(&format!("arch session answer {id}")), "{out}");
+    assert_eq!(w.status(&id)["state"], "asks");
+
+    let ids = w.element_ids(&id);
+    let replay = replay_dir(&w, "replay-2", &[element_turn(1), judge_turn(&ids, true)]);
+    let out = w.ok(
+        &["answer", &id, "cents"],
+        &[("ARCH_DRIVER", &selector("replay", &replay))],
+    );
+    assert!(out.contains("done · "), "{out}");
+    let thread = thread(&w, &id);
+    assert!(thread.contains(r#""answers":["cents"]"#), "{thread}");
+}
+
+#[test]
+fn a_failed_gate_waits_for_a_door_then_one_more_round_passes() {
+    let w = world(1);
+    let id = w.new_session();
+    let ids = w.element_ids(&id);
+    // The element, then three failing judges around two fix rounds: the budget is spent.
+    let turns = [
+        element_turn(1),
+        judge_turn(&ids, false),
+        quiet_turn("agent-1"),
+        judge_turn(&ids, false),
+        quiet_turn("agent-1"),
+        judge_turn(&ids, false),
+    ];
+    let replay = replay_dir(&w, "replay-1", &turns);
+    let out = w.ok(
+        &["accept", &id, "--delegate"],
+        &[("ARCH_DRIVER", &selector("replay", &replay))],
+    );
+    assert!(out.contains("gate failed\n  ? The gate of"), "{out}");
+    assert!(out.contains("    - one more round, with a hint"), "{out}");
+    assert_eq!(w.status(&id)["state"], "gate-failed");
+
+    let replay = replay_dir(
+        &w,
+        "replay-2",
+        &[quiet_turn("agent-1"), judge_turn(&ids, true)],
+    );
+    let out = w.ok(
+        &["decide", &id, "one-more", "--hint", "persist the refund"],
+        &[("ARCH_DRIVER", &selector("replay", &replay))],
+    );
+    assert!(out.contains("judge 1/1 pass"), "{out}");
+    assert!(out.contains("done · "), "{out}");
+    assert_eq!(w.status(&id)["gates"].as_array().unwrap().len(), 4);
+}
+
+#[test]
+fn accept_without_delegate_is_a_locked_you_session() {
+    let w = world(1);
+    let id = w.new_session();
+    let out = w.ok(&["accept", &id], &[]);
+    assert!(out.contains("yours · "), "{out}");
+    assert_eq!(w.status(&id)["state"], "yours");
+}
+
+#[test]
+fn merge_waits_for_red_checks_names_the_strategies_and_can_be_run_again() {
+    let w = world(1);
+    let id = w.new_session();
+    let ids = w.element_ids(&id);
+    let replay = replay_dir(&w, "replay", &[element_turn(1), judge_turn(&ids, true)]);
+    w.ok(
+        &["accept", &id, "--delegate"],
+        &[("ARCH_DRIVER", &selector("replay", &replay))],
+    );
+    let worktree = w.root.join("wt/smallsvc-w1");
+    let head = git(&worktree, &["rev-parse", "HEAD"]);
+    let forge = forge_dir(
+        &w,
+        "forge-pr",
+        json!([
+            { "method": "GET", "path": pulls_path(&id), "status": 200, "json": [] },
+            { "method": "POST", "path": "/repos/fake/repo/pulls", "status": 201,
+              "json": pull(7, &id, &head, "open", false) },
+        ]),
+    );
+    w.ok(&["pr", &id], &[("ARCH_FORGE", &selector("fake", &forge))]);
+
+    let open = pull(7, &id, &head, "open", false);
+    let checks = |conclusion: &str| {
+        json!({ "total_count": 1, "check_runs": [{ "name": "ci", "status": "completed",
+            "conclusion": conclusion, "html_url": "https://ci" }] })
+    };
+    let attempt = |name: &str, conclusion: &str, strategies: (bool, bool, bool), args: &[&str]| {
+        let forge = forge_dir(
+            &w,
+            name,
+            json!([
+                { "method": "GET", "path": pulls_path(&id), "status": 200, "json": [open] },
+                { "method": "GET", "path": format!("/repos/fake/repo/commits/{head}/check-runs?per_page=100"),
+                  "status": 200, "json": checks(conclusion) },
+                { "method": "GET", "path": format!("/repos/fake/repo/commits/{head}/status?per_page=100"),
+                  "status": 200, "json": { "statuses": [] } },
+                { "method": "GET", "path": "/repos/fake/repo", "status": 200,
+                  "json": { "allow_merge_commit": strategies.0, "allow_squash_merge": strategies.1,
+                            "allow_rebase_merge": strategies.2 } },
+                { "method": "PUT", "path": "/repos/fake/repo/pulls/7/merge", "status": 200,
+                  "json": { "sha": "MERGE", "merged": true } },
+            ]),
+        );
+        let mut all = vec!["merge", id.as_str()];
+        all.extend(args);
+        w.arch(&all, &[("ARCH_FORGE", &selector("fake", &forge))])
+    };
+
+    // Red checks: refused, nothing leaves the branch.
+    let out = attempt("forge-red", "failure", (true, true, true), &[]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("checks failed: arch merges once they pass")
+    );
+    assert!(
+        worktree.join(".arch/sessions").join(&id).is_dir(),
+        "the folder is still on the branch"
+    );
+
+    // Several strategies and none named: refused with the list.
+    let out = attempt("forge-several", "success", (true, true, true), &[]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&out.stderr)
+            .contains("the repo allows merge, squash, rebase; name one with --strategy"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Named: merged and archived, from the capture the first attempt left in the cache.
+    let sha = fake_merge_commit(&w, &id);
+    let forge = forge_dir(
+        &w,
+        "forge-squash",
+        json!([
+            { "method": "GET", "path": pulls_path(&id), "status": 200, "json": [open] },
+            { "method": "GET", "path": format!("/repos/fake/repo/commits/{head}/check-runs?per_page=100"),
+              "status": 200, "json": checks("success") },
+            { "method": "GET", "path": format!("/repos/fake/repo/commits/{head}/status?per_page=100"),
+              "status": 200, "json": { "statuses": [] } },
+            { "method": "GET", "path": "/repos/fake/repo", "status": 200,
+              "json": { "allow_merge_commit": true, "allow_squash_merge": true, "allow_rebase_merge": true } },
+            { "method": "PUT", "path": "/repos/fake/repo/pulls/7/merge", "status": 200,
+              "json": { "sha": sha, "merged": true } },
+        ]),
+    );
+    let out = w.ok(
+        &["merge", &id, "--strategy", "squash"],
+        &[("ARCH_FORGE", &selector("fake", &forge))],
+    );
+    assert!(out.contains("merged PR #7 (squash)"), "{out}");
+    assert!(!worktree.exists());
+    assert!(
+        !w.repo
+            .join(format!(".arch/cache/archive/{id}.toml"))
+            .exists()
+    );
+    assert_eq!(w.status(&id)["state"], "archived");
 }

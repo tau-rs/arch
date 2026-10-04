@@ -439,6 +439,93 @@ fn write(path: &Path, text: &str) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arch_facts::{Cursor, Record};
+
+    #[test]
+    fn the_description_lists_elements_verdicts_gates_and_overrides() {
+        let id = SessionId::new("3c9e1f0a");
+        let mut plan = Plan::new(id.clone(), "add a refund flow");
+        let e1 = plan
+            .add_element("add Refund | to the domain", "src/domain/refund.rs")
+            .id
+            .clone();
+        plan.elements[0].files = vec!["src/domain/refund.rs".into()];
+        plan.add_element("RefundRepo port", "src/ports/refunds.rs");
+        plan.groups = crate::shape(&plan, "cargo test").unwrap();
+        let session = Session {
+            id: id.clone(),
+            name: "add a refund flow".into(),
+            state: SessionState::Done,
+            branch: Some("arch/3c9e1f0a".into()),
+            worktree: None,
+            base: None,
+            driver: None,
+            created: arch_facts::now(),
+            cursor: Cursor::default(),
+            agents: vec![],
+        };
+        let record = |seq, kind| Record {
+            seq,
+            at: arch_facts::now(),
+            kind,
+            witnesses: vec![],
+        };
+        let records = vec![
+            record(
+                1,
+                RecordKind::JudgeVerdict {
+                    element: e1.clone(),
+                    verdict: Verdict::Fail,
+                    reason: "not persisted".into(),
+                },
+            ),
+            record(
+                2,
+                RecordKind::JudgeVerdict {
+                    element: e1,
+                    verdict: Verdict::Pass,
+                    reason: "realized".into(),
+                },
+            ),
+            record(
+                3,
+                RecordKind::Override {
+                    what: "gate of group 1".into(),
+                    reason: "flaky test".into(),
+                    by: "Person".into(),
+                },
+            ),
+        ];
+        let thread = vec![
+            ThreadEntry::new(
+                ThreadAuthor::Arch,
+                ThreadEvent::Text {
+                    text: "gate · group 1 · cargo test ✓ · judge 2/2 pass".into(),
+                },
+            ),
+            ThreadEntry::new(
+                ThreadAuthor::Planner,
+                ThreadEvent::Text {
+                    text: "gate · not arch's".into(),
+                },
+            ),
+        ];
+        let body = description(&records, &thread, &plan, &session);
+        assert!(body.starts_with(
+            "add a refund flow\n\narch session `3c9e1f0a` · 2 element(s) in 1 group(s)."
+        ));
+        assert!(body.contains(
+            "| E1 | add Refund \\| to the domain | `src/domain/refund.rs` | `src/domain/refund.rs` | pass · realized |"
+        ), "{body}");
+        assert!(
+            body.contains("| E2 | RefundRepo port | `src/ports/refunds.rs` |  | — |"),
+            "{body}"
+        );
+        assert!(body.contains("### Gates\n\n- gate · group 1 · cargo test ✓ · judge 2/2 pass\n\n"));
+        assert!(!body.contains("not arch's"));
+        assert!(body.contains("- gate of group 1 accepted as is by Person: flaky test"));
+        assert!(body.ends_with("Arch-Session: 3c9e1f0a\n"));
+    }
 
     #[test]
     fn the_strategy_is_the_repos_never_arch_s() {

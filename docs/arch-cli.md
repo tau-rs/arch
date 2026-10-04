@@ -2,7 +2,8 @@
 
 `arch` is the one binary. It depends on `arch-api` only; `arch-api` holds the methods and
 re-exports the types the CLI prints. Live today: `init` and `check` (milestone 4, issue #5),
-`hook` and `mcp` (the tool layer, issue #46; see `docs/arch-driver.md`).
+`hook` and `mcp` (the tool layer, issue #46; see `docs/arch-driver.md`), and `session` (plan,
+delegate, review and merge, issue #48; see [arch-session](arch-session.md#the-cli)).
 
 ## `arch init [path] [--no-commit]`
 
