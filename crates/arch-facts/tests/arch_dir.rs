@@ -382,3 +382,45 @@ fn a_minimal_session_record_reads_with_an_empty_cursor() {
     assert_eq!(s.cursor, Cursor::default());
     assert!(s.agents.is_empty());
 }
+
+#[test]
+fn an_archive_holds_the_session_record_and_takes_its_last_states() {
+    let (_tmp, arch) = arch_in_tmp();
+    let id = SessionId::new("s1");
+    let dir = arch.session(&id);
+    dir.write_plan(&sample_plan("s1")).unwrap();
+    let mut archive = Archive::of(&dir).unwrap();
+    assert_eq!(archive.session().unwrap(), None, "no record yet");
+
+    let mut session = Session {
+        id: id.clone(),
+        name: "add a refund flow".into(),
+        state: SessionState::InReview,
+        branch: Some("arch/s1".into()),
+        worktree: None,
+        base: None,
+        driver: None,
+        created: "2026-10-03T10:00:00Z".parse().unwrap(),
+        cursor: Cursor::default(),
+        agents: vec![],
+    };
+    dir.write_session(&session).unwrap();
+    let mut archive_with = Archive::of(&dir).unwrap();
+    assert_eq!(archive_with.session().unwrap(), Some(session.clone()));
+
+    session.state = SessionState::Archived;
+    archive.set_session(&session).unwrap();
+    archive_with.set_session(&session).unwrap();
+    assert_eq!(
+        archive.files, archive_with.files,
+        "added or replaced, same file"
+    );
+    assert_eq!(
+        archive_with.session().unwrap().unwrap().state,
+        SessionState::Archived
+    );
+    let paths: Vec<_> = archive.files.iter().map(|f| f.path.clone()).collect();
+    let mut sorted = paths.clone();
+    sorted.sort();
+    assert_eq!(paths, sorted);
+}

@@ -11,7 +11,7 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::session::{SessionId, Timestamp, now};
+use crate::session::{Session, SessionId, Timestamp, now};
 
 use super::SessionDir;
 
@@ -52,6 +52,34 @@ impl Archive {
             archived_at: now(),
             files,
         })
+    }
+
+    /// The session record the archive holds (`session.toml`), if any.
+    pub fn session(&self) -> Result<Option<Session>> {
+        self.files
+            .iter()
+            .find(|f| f.path == Path::new("session.toml"))
+            .map(|f| {
+                toml::from_str(&f.content)
+                    .map_err(|e| Error::format("refs/notes/arch: session.toml", e.message()))
+            })
+            .transpose()
+    }
+
+    /// Replace the session record the archive holds, as `write_session` writes it: the states
+    /// after the folder left the branch (merged, archived) are only ever in the archive.
+    pub fn set_session(&mut self, session: &Session) -> Result<()> {
+        let content = toml::to_string_pretty(session)
+            .map_err(|e| Error::Other(anyhow::anyhow!("session.toml: {e}")))?;
+        let path = PathBuf::from("session.toml");
+        match self.files.iter_mut().find(|f| f.path == path) {
+            Some(f) => f.content = content,
+            None => {
+                self.files.push(ArchiveFile { path, content });
+                self.files.sort_by(|a, b| a.path.cmp(&b.path));
+            }
+        }
+        Ok(())
     }
 
     /// Serialize as the note's text.
