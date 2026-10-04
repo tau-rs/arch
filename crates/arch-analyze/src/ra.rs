@@ -4,12 +4,13 @@
 //! The `ra_ap_*` crates are rust-analyzer published as a library; they have no stable API and
 //! are pinned to one exact version.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use ra_ap_ide_db::base_db::salsa::Durability;
-use ra_ap_ide_db::base_db::{FileSet, SourceDatabase, SourceRoot, SourceRootId};
+use ra_ap_ide_db::base_db::{FileSet, SourceDatabase, SourceRoot, SourceRootId, all_crates};
 use ra_ap_ide_db::{ChangeWithProcMacros, RootDatabase};
 use ra_ap_load_cargo::{
     LoadCargoConfig, ProcMacroServerChoice, ProjectFolders, SourceRootConfig, load_workspace,
@@ -18,6 +19,7 @@ use ra_ap_paths::AbsPathBuf;
 use ra_ap_proc_macro_api::ProcMacroClient;
 use ra_ap_project_model::{CargoConfig, ProjectManifest, ProjectWorkspace, RustLibSource};
 use ra_ap_vfs::{FileId, Vfs, VfsPath};
+use sha2::{Digest, Sha256};
 
 /// The rust-analyzer crates' version, recorded in `Analyzer.version`.
 pub const RA_VERSION: &str = "0.0.356";
@@ -74,6 +76,8 @@ pub struct Session {
     /// The triple analysed for: `areas.toml`'s `target`, else the host's.
     target: String,
     toolchain: Toolchain,
+    /// The build-script output of each package in the repository, by its directory.
+    out_dirs: BTreeMap<PathBuf, String>,
     // Dropping the client stops the proc-macro server; macros expand lazily, so it must live.
     _proc_macros: ProcMacroClient,
 }
@@ -145,7 +149,9 @@ impl Session {
         let Some(proc_macros) = proc_macros else {
             bail!("the proc-macro server did not start: macros are not expanded");
         };
+        let out_dirs = out_dirs(&db, root);
         Ok(Session {
+            out_dirs,
             db,
             vfs,
             roots,
@@ -164,6 +170,14 @@ impl Session {
     /// The toolchain picked in the repository root at load.
     pub fn toolchain(&self) -> &Toolchain {
         &self.toolchain
+    }
+
+    /// The content hash of each repository package's build-script output (`OUT_DIR`), by the
+    /// package's directory relative to the root; packages without a build script are absent.
+    /// Hashed once, at load: rust-analyzer reads `OUT_DIR` then and never again, so these are
+    /// the bytes the facts were computed from, whatever a later build writes there (ADR 0030).
+    pub fn out_dirs(&self) -> &BTreeMap<PathBuf, String> {
+        &self.out_dirs
     }
 
     /// rust-analyzer's id for a repository-relative file, when it has the file.
@@ -243,6 +257,54 @@ fn cargo_target(target: Option<&str>, host: &str) -> Option<String> {
     target.filter(|t| *t != host).map(str::to_string)
 }
 
+/// The `OUT_DIR` rust-analyzer gave each crate whose manifest is under `root`, hashed by
+/// [`hash_dir`], by package directory relative to `root`.
+fn out_dirs(db: &RootDatabase, root: &Path) -> BTreeMap<PathBuf, String> {
+    let mut dirs: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
+    for krate in all_crates(db).iter() {
+        let env = krate.env(db);
+        let (Some(manifest), Some(out)) = (env.get("CARGO_MANIFEST_DIR"), env.get("OUT_DIR"))
+        else {
+            continue;
+        };
+        if let Ok(rel) = Path::new(&manifest).strip_prefix(root) {
+            dirs.entry(rel.to_path_buf()).or_insert_with(|| out.into());
+        }
+    }
+    dirs.into_iter()
+        .map(|(p, out)| (p, hash_dir(&out)))
+        .collect()
+}
+
+/// A directory's files by relative path and content, recursively, in path order: the same
+/// bytes in another place give the same hash. A directory that cannot be read hashes as empty.
+fn hash_dir(dir: &Path) -> String {
+    let mut files = Vec::new();
+    let mut stack = vec![PathBuf::new()];
+    while let Some(rel) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(dir.join(&rel)) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let path = rel.join(e.file_name());
+            match e.file_type() {
+                Ok(t) if t.is_dir() => stack.push(path),
+                Ok(_) => files.push(path),
+                Err(_) => {}
+            }
+        }
+    }
+    files.sort();
+    let mut h = Sha256::new();
+    for f in files {
+        let bytes = std::fs::read(dir.join(&f)).unwrap_or_default();
+        h.update(f.to_string_lossy().replace('\\', "/").as_bytes());
+        h.update([0]);
+        h.update(Sha256::digest(&bytes));
+    }
+    hex::encode(h.finalize())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,5 +332,27 @@ mod tests {
             })
         );
         assert_eq!(Toolchain::parse("rustc 1.99.0\n"), None);
+    }
+
+    #[test]
+    fn a_directory_s_hash_is_its_files_not_its_place() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fill = |dir: &Path, code: &str| {
+            std::fs::create_dir_all(dir.join("sub")).unwrap();
+            std::fs::write(dir.join("gen.rs"), code).unwrap();
+            std::fs::write(dir.join("sub/more.rs"), "pub fn more() {}\n").unwrap();
+        };
+        let (a, b, c) = (
+            tmp.path().join("a"),
+            tmp.path().join("b"),
+            tmp.path().join("c"),
+        );
+        fill(&a, "pub fn alpha() {}\n");
+        fill(&b, "pub fn alpha() {}\n");
+        fill(&c, "pub fn beta() {}\n");
+        assert_eq!(hash_dir(&a), hash_dir(&b));
+        assert_ne!(hash_dir(&a), hash_dir(&c));
+        std::fs::rename(b.join("sub/more.rs"), b.join("sub/moved.rs")).unwrap();
+        assert_ne!(hash_dir(&a), hash_dir(&b), "a file's name is part of it");
     }
 }

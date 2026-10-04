@@ -647,3 +647,84 @@ fn syntax_level_facts_name_no_platform() {
         (None, false)
     );
 }
+
+/// A workspace whose `gen` package generates code into its `OUT_DIR` from a file outside the
+/// tree (next to the target directory), used by `app`; `other` depends on neither.
+fn generating_workspace(root: &Path, input: &str) -> Options {
+    write(
+        root,
+        &[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\ngen = { path = \"gen\" }\nother = { path = \"other\" }\n\n[workspace]\nmembers = [\"gen\", \"other\"]\n",
+            ),
+            (
+                "src/main.rs",
+                "fn main() {\n    gen::run();\n    other::run();\n}\n",
+            ),
+            (
+                "gen/Cargo.toml",
+                "[package]\nname = \"gen\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "gen/build.rs",
+                "use std::path::Path;\n\nfn main() {\n    let input = Path::new(&std::env::var(\"CARGO_TARGET_DIR\").unwrap()).join(\"../gen-input\");\n    println!(\"cargo:rerun-if-changed={}\", input.display());\n    let name = std::fs::read_to_string(&input).unwrap();\n    let out = Path::new(&std::env::var(\"OUT_DIR\").unwrap()).join(\"gen.rs\");\n    std::fs::write(out, format!(\"pub fn {}() {{}}\\n\", name.trim())).unwrap();\n}\n",
+            ),
+            (
+                "gen/src/lib.rs",
+                "include!(concat!(env!(\"OUT_DIR\"), \"/gen.rs\"));\n\npub fn run() {}\n",
+            ),
+            (
+                "other/Cargo.toml",
+                "[package]\nname = \"other\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            ),
+            ("other/src/lib.rs", "pub fn run() {}\n"),
+        ],
+    );
+    let outside = root.parent().unwrap();
+    std::fs::write(outside.join("gen-input"), input).unwrap();
+    Options {
+        repo_name: Some("app".into()),
+        commit: None,
+        target_dir: Some(outside.join("target")),
+        ..options()
+    }
+}
+
+/// Each file's facts key, by path.
+fn keys_of(root: &Path, options: Options) -> std::collections::BTreeMap<String, FactsKey> {
+    let mut analyzer = Analyzer::open(root, options).unwrap();
+    assert_eq!(analyzer.degraded(), None);
+    let mut store = Store::in_memory().unwrap();
+    let key = analyzer.index(&mut store).unwrap();
+    store
+        .tree_files(&key)
+        .unwrap()
+        .into_iter()
+        .map(|f| (f.path.to_string_lossy().replace('\\', "/"), f.facts_key))
+        .collect()
+}
+
+#[test]
+fn build_script_output_names_its_package_and_the_packages_that_use_it() {
+    // ADR 0030: what a build script generates is an input from outside the tree, keyed by
+    // content. Three checkouts of one tree, each with its own target directory: two generate
+    // the same code, one other code.
+    let tmp = tempfile::tempdir().unwrap();
+    let checkout = |name: &str, input: &str| {
+        let root = tmp.path().join(name).join("repo");
+        let options = generating_workspace(&root, input);
+        keys_of(&root.canonicalize().unwrap(), options)
+    };
+    let a = checkout("a", "alpha");
+    let b = checkout("b", "alpha");
+    let c = checkout("c", "beta");
+    assert_eq!(a, b, "the same output in another place is the same input");
+    let differs = |path: &str| a[path] != c[path];
+    assert!(
+        differs("gen/src/lib.rs"),
+        "the package whose build script it is"
+    );
+    assert!(differs("src/main.rs"), "a package that depends on it");
+    assert!(!differs("other/src/lib.rs"), "a package that does not");
+}

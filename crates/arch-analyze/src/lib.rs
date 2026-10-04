@@ -16,7 +16,7 @@
 //! # Ok::<(), arch_analyze::Error>(())
 //! ```
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use arch_facts::{
@@ -605,7 +605,9 @@ impl Analyzer {
             .find(|(p, _)| p == Path::new("Cargo.lock"))
             .map(|(_, b)| b.hex());
         let analyzer = analyzer_inputs(head, self.session.as_ref().map(|s| s.toolchain()));
-        let ids = package::package_ids(plan, &trees, lock.as_deref(), &analyzer);
+        let no_out_dirs = BTreeMap::new();
+        let out_dirs = self.session.as_ref().map_or(&no_out_dirs, |s| s.out_dirs());
+        let ids = package::package_ids(plan, &trees, lock.as_deref(), &analyzer, out_dirs);
         // Innermost package directory first.
         let mut dirs: Vec<(PathBuf, usize)> = (0..plan.packages.len())
             .map(|p| (package::package_dir(plan, p), p))
