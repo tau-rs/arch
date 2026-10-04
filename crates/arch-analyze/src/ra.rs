@@ -111,7 +111,7 @@ impl Session {
         let mut cargo = CargoConfig {
             sysroot: Some(RustLibSource::Discover),
             set_test: true,
-            target: target.map(str::to_string),
+            target: cargo_target(target, &toolchain.host),
             ..Default::default()
         };
         if let Some(dir) = target_dir {
@@ -235,9 +235,28 @@ impl Session {
     }
 }
 
+/// The `--target` rust-analyzer gives cargo: none when the pin is this machine's own triple.
+/// The platform analysed for is the same, and cargo keeps a `--target` build apart from the
+/// plain one (`target/<triple>/`), so passing it would rebuild what the developer already built
+/// and make the first index cold (ADR 0026).
+fn cargo_target(target: Option<&str>, host: &str) -> Option<String> {
+    target.filter(|t| *t != host).map(str::to_string)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pin_to_this_machine_s_triple_builds_where_the_developer_did() {
+        let linux = "x86_64-unknown-linux-gnu";
+        assert_eq!(cargo_target(Some(linux), linux), None);
+        assert_eq!(
+            cargo_target(Some(linux), "aarch64-apple-darwin").as_deref(),
+            Some(linux)
+        );
+        assert_eq!(cargo_target(None, linux), None);
+    }
 
     #[test]
     fn rustc_vv_names_the_host_release_and_commit() {
