@@ -2,8 +2,8 @@
 //! arch-design#127).
 //!
 //! `init`, `check` (milestone 4), `hook` and `mcp` (the tool layer, #46) and `session` (#48) are
-//! live; `serve` reports that it is not yet implemented and exits with status 2. Depends on
-//! `arch-api` only.
+//! live; `serve` answers `initialize` on the repo's socket (ADR 0034, #7) and exits with status 2
+//! when it cannot start. Depends on `arch-api` only.
 //!
 //! Exit codes of `arch check`: 0 when nothing blocks (clean, or warnings only), 1 when a finding
 //! blocks, 2 when the tool itself failed. `arch hook pre` exits 0 to let a call through and 2 to
@@ -38,7 +38,7 @@ enum Command {
         #[arg(long)]
         no_commit: bool,
     },
-    /// Run the daemon the app and the agents talk to.
+    /// Run the daemon the app talks to, on this repo's socket (the current directory).
     Serve,
     /// CI: facts, findings against `.arch/rules`, exit code, machine-readable output.
     Check {
@@ -282,7 +282,13 @@ fn main() -> ExitCode {
             }
             output.exit_code()
         }),
-        Command::Serve => not_yet("serve"),
+        Command::Serve => std::env::current_dir()
+            .map_err(|source| arch_api::Error::Io {
+                path: ".".into(),
+                source,
+            })
+            .and_then(|repo| arch_api::serve(&repo))
+            .map(|()| 0),
         Command::Mcp { target, co_author } => arch_api::mcp(
             &target.into_api(),
             &co_author,
@@ -560,11 +566,6 @@ fn render_merge(r: &MergeReport) -> String {
         None => out.push_str(&format!("removed branch {}\n", r.branch)),
     }
     out
-}
-
-fn not_yet(name: &str) -> Result<u8, arch_api::Error> {
-    eprintln!("arch {name}: not implemented yet");
-    Ok(2)
 }
 
 /// A serde enum value in its kebab-case spelling.

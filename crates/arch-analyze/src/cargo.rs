@@ -75,6 +75,8 @@ pub struct Package {
     pub targets: Vec<Target>,
     /// Its normal dependencies (dev and build dependencies are not part of the closure).
     pub deps: Vec<Dep>,
+    /// The packages its `[dev-dependencies]` name, which its test modules can use.
+    pub dev_deps: Vec<String>,
 }
 
 impl Package {
@@ -115,6 +117,38 @@ pub struct UnitPlan {
 }
 
 impl UnitPlan {
+    /// `package` and the workspace packages it depends on, transitively, its dev-dependencies
+    /// included (its test modules use them): the crates its code can name. The syntax pass looks
+    /// only into these, as rustc does.
+    pub fn closure(&self, package: usize) -> BTreeSet<usize> {
+        let by_name = |name: &str| self.packages.iter().position(|q| q.name == name);
+        let dev = self.packages[package].dev_deps.iter();
+        let mut queue: Vec<usize> = std::iter::once(package)
+            .chain(dev.filter_map(|d| by_name(d)))
+            .collect();
+        let mut seen = BTreeSet::new();
+        while let Some(p) = queue.pop() {
+            if !seen.insert(p) {
+                continue;
+            }
+            queue.extend(
+                self.packages[p]
+                    .deps
+                    .iter()
+                    .filter_map(|d| by_name(&d.package)),
+            );
+        }
+        seen
+    }
+
+    /// The packages whose [`UnitPlan::closure`] holds one of `changed`: what a declaration
+    /// change in them can reach. Every other package's facts stay what they were.
+    pub fn dependents(&self, changed: &BTreeSet<usize>) -> BTreeSet<usize> {
+        (0..self.packages.len())
+            .filter(|p| !self.closure(*p).is_disjoint(changed))
+            .collect()
+    }
+
     /// The crates as facts: analyzed, or not analyzed with the reason (ADR 0007).
     pub fn crates(&self) -> Vec<Crate> {
         let analyzed: BTreeSet<usize> = self.unit.iter().map(|u| u.package).collect();
@@ -274,11 +308,18 @@ fn metadata(root: &Path) -> Result<Vec<Package>> {
                 features: d.features.clone(),
             })
             .collect();
+        let dev_deps = p
+            .dependencies
+            .iter()
+            .filter(|d| d.kind.as_deref() == Some("dev"))
+            .map(|d| d.name.clone())
+            .collect();
         packages.push(Package {
             name: p.name.clone(),
             manifest: rel(&base, &p.manifest_path),
             targets,
             deps,
+            dev_deps,
         });
     }
     Ok(packages)
@@ -433,11 +474,24 @@ fn manifests(root: &Path) -> Result<Vec<Package>> {
                 });
             }
         }
+        let dev_deps = t
+            .get("dev-dependencies")
+            .and_then(|d| d.as_table())
+            .into_iter()
+            .flatten()
+            .map(|(key, v)| {
+                v.get("package")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or(key)
+                    .to_string()
+            })
+            .collect();
         packages.push(Package {
             name: name.into(),
             manifest,
             targets,
             deps,
+            dev_deps,
         });
     }
     if packages.is_empty() {
@@ -548,7 +602,30 @@ mod tests {
                     features: vec![],
                 })
                 .collect(),
+            dev_deps: vec![],
         }
+    }
+
+    #[test]
+    fn a_change_reaches_the_package_and_those_depending_on_it() {
+        let lib = |n: &'static str| [(TargetKind::Lib, n)];
+        let packages = vec![
+            pkg("app", &[(TargetKind::Bin, "app")], &["leaf", "side"]),
+            pkg("base", &lib("base"), &[]),
+            pkg("leaf", &lib("leaf"), &["base"]),
+            pkg("side", &lib("side"), &["base"]),
+        ];
+        let mut plan = plan(packages, None, None).unwrap();
+        let set = |v: &[usize]| v.iter().copied().collect::<BTreeSet<usize>>();
+        assert_eq!(plan.closure(0), set(&[0, 1, 2, 3]));
+        assert_eq!(plan.closure(2), set(&[1, 2]));
+        assert_eq!(plan.dependents(&set(&[2])), set(&[0, 2]));
+        assert_eq!(plan.dependents(&set(&[1])), set(&[0, 1, 2, 3]));
+        assert_eq!(plan.dependents(&set(&[0])), set(&[0]));
+        // `side`'s tests use `leaf`: a change in `leaf` reaches `side`.
+        plan.packages[3].dev_deps = vec!["leaf".into()];
+        assert_eq!(plan.closure(3), set(&[1, 2, 3]));
+        assert_eq!(plan.dependents(&set(&[2])), set(&[0, 2, 3]));
     }
 
     #[test]

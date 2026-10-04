@@ -5,14 +5,16 @@
 //! transports. Present today, for the CLI: [`init()`] and [`check()`] (milestone 4, issue #5),
 //! [`hook()`] and [`mcp()`], the tool layer an agent runs under (ADR 0012, issue #46), and the
 //! `session_*` methods of [`session`] (#48). The app method set and its published schema,
-//! `schemas/arch-api.json`, are in [`rpc`] (ADR 0034, issue #7). The CLI depends on this crate
-//! only, so the types it prints are re-exported here.
+//! `schemas/arch-api.json`, are in [`rpc`] (ADR 0034, issue #7), served by [`serve()`]. The CLI
+//! depends on this crate only, so the types it prints are re-exported here.
 
 use std::path::PathBuf;
 
 pub mod check;
 pub mod init;
 pub mod rpc;
+#[cfg(unix)]
+pub mod serve;
 pub mod session;
 pub mod tool_layer;
 
@@ -81,4 +83,26 @@ pub enum Error {
     /// A setting or a cache file could not be read.
     #[error("{0}")]
     Config(String),
+    /// `arch serve` could not start or stopped.
+    #[cfg(unix)]
+    #[error(transparent)]
+    Serve(#[from] serve::ServeError),
+    /// `arch serve` has no named-pipe transport yet (ADR 0034 §5).
+    #[error("arch serve is not supported on this platform yet")]
+    Unsupported,
+}
+
+/// `arch serve` for the repo at `repo`: bind its socket, say where on stderr, serve until killed.
+pub fn serve(repo: &std::path::Path) -> Result<(), Error> {
+    #[cfg(unix)]
+    {
+        let server = serve::bind(repo, &serve::SocketEnv::current())?;
+        eprintln!("arch serve: listening on {}", server.path().display());
+        Ok(server.run()?)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = repo;
+        Err(Error::Unsupported)
+    }
 }

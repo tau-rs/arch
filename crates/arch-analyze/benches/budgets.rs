@@ -4,7 +4,7 @@
 //! |---|---|---|
 //! | `first_index_cold` | < 5 s | no cache; `target/` already built by a prior `cargo check`; from opening the analyzer to the first complete facts at `resolved` confidence |
 //! | `recompute_body_only` | < 500 ms | one source file saved, function bodies only: that file is re-analysed, the others carried forward (ADR 0002); from the save on disk, through the watcher's debounce, to the new facts |
-//! | `recompute_declaration` | < 500 ms | one source file saved with a new declaration: the unit is re-analysed; same span |
+//! | `recompute_declaration` | < 500 ms | one source file saved with a new declaration: its package and those depending on it are re-analysed (smallsvc has one); same span |
 //! | `recompute_new_file` | < 500 ms | a new module file and the `mod` line reaching it; same span |
 //! | `reload_after_manifest` | < 5 s | `Cargo.toml` saved: rust-analyzer loads again (#60), held to the first index's budget; same span, to resolved facts with nothing degraded |
 //!
@@ -192,7 +192,7 @@ fn main() -> ExitCode {
         &mut analyzer,
         &mut store,
         &[(pay, text)],
-        Recompute::Unit,
+        Recompute::Packages(vec!["orderly".into()]),
         &new_fn("added_by_the_benchmark"),
     ) {
         Ok(took) => took,
