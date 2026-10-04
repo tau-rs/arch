@@ -372,7 +372,10 @@ impl<'a> Engine<'a> {
             if matches!(&event, TurnEvent::ToolCall { name, .. } if name == ASK) {
                 asked = true;
             }
-            if let Some(mut entry) = thread_entry(id, &event, &mut names) {
+            let author = ThreadAuthor::Agent {
+                element: Some(id.clone()),
+            };
+            if let Some(mut entry) = thread_entry(author, &event, &mut names) {
                 entry.driver = Some(pointer.clone());
                 self.dir.append_thread(&entry)?;
             }
@@ -677,37 +680,44 @@ impl<'a> Engine<'a> {
         ))?)
     }
 
-    /// Commit the session folder when it changed: `chore(arch): <name> · <state>`.
     fn commit_folder(&self) -> Result<(), Error> {
-        let folder = format!(".arch/sessions/{}", self.session.id);
-        git(&self.worktree, &["add", "--force", "--", &folder])?;
-        if git(
-            &self.worktree,
-            &["diff", "--cached", "--quiet", "--", &folder],
-        )
-        .is_ok()
-        {
-            return Ok(());
-        }
-        let state = serde_json::to_value(self.session.state)
-            .ok()
-            .and_then(|v| v.as_str().map(String::from))
-            .unwrap_or_default();
-        git(
-            &self.worktree,
-            &[
-                "commit",
-                "--quiet",
-                "-m",
-                &format!("chore(arch): {} · {state}", self.session.name),
-                "-m",
-                &format!("Arch-Session: {}", self.session.id),
-                "--",
-                &folder,
-            ],
-        )?;
-        Ok(())
+        commit_folder(&self.worktree, &self.session)
     }
+}
+
+/// Commit the session folder when it changed: `chore(arch): <name> · <state>`.
+pub(crate) fn commit_folder(worktree: &Path, session: &Session) -> Result<(), Error> {
+    let folder = format!(".arch/sessions/{}", session.id);
+    git(worktree, &["add", "--force", "--", &folder])?;
+    if git(worktree, &["diff", "--cached", "--quiet", "--", &folder]).is_ok() {
+        return Ok(());
+    }
+    git(
+        worktree,
+        &[
+            "commit",
+            "--quiet",
+            "-m",
+            &format!(
+                "chore(arch): {} · {}",
+                session.name,
+                state_word(session.state)
+            ),
+            "-m",
+            &format!("Arch-Session: {}", session.id),
+            "--",
+            &folder,
+        ],
+    )?;
+    Ok(())
+}
+
+/// A state in its kebab-case spelling (`in-review`).
+pub fn state_word(state: SessionState) -> String {
+    serde_json::to_value(state)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default()
 }
 
 fn verdict_word(v: Verdict) -> &'static str {
@@ -730,8 +740,8 @@ fn list(paths: &[PathBuf]) -> String {
 
 /// A driver event as a thread line (ADR 0003: the filtered stream). The start, sub-agents' own
 /// starts and hook events are not kept; a tool result names its call's tool.
-fn thread_entry(
-    element: &ElementId,
+pub(crate) fn thread_entry(
+    author: ThreadAuthor,
     event: &TurnEvent,
     names: &mut HashMap<String, String>,
 ) -> Option<ThreadEntry> {
@@ -760,12 +770,7 @@ fn thread_entry(
             return None;
         }
     };
-    Some(ThreadEntry::new(
-        ThreadAuthor::Agent {
-            element: Some(element.clone()),
-        },
-        event,
-    ))
+    Some(ThreadEntry::new(author, event))
 }
 
 /// A tool input in one line: its path, command or pattern when it has one.
