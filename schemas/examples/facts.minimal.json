@@ -1,5 +1,5 @@
 {
-  "schema_version": 0,
+  "schema_version": 1,
   "repo": {
     "name": "smallsvc",
     "commit": "0000000000000000000000000000000000000000",
@@ -10,7 +10,9 @@
   },
   "analyzer": {
     "name": "arch-analyze",
-    "version": "0.0.0+ra_ap_0.0.356"
+    "version": "0.0.0+ra_ap_0.0.356",
+    "target": "x86_64-unknown-linux-gnu",
+    "target_pinned": true
   },
   "crates": [
     {

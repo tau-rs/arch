@@ -9,9 +9,10 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Version of this document shape. `0` until the first golden facts are pinned; bumped on any
-/// change that breaks a reader, announced in arch-design before shipping (HANDOFF §5).
-pub const SCHEMA_VERSION: u32 = 0;
+/// Version of this document shape, bumped on any change that breaks a reader, announced in
+/// arch-design before shipping (HANDOFF §5). `0` was the shape of the first pinned golden;
+/// `1` adds the target analysed for (`Analyzer.target`, ADR 0030).
+pub const SCHEMA_VERSION: u32 = 1;
 
 /// Everything the analyzer knows about one repository at one commit.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -80,6 +81,14 @@ pub struct Analyzer {
     pub name: String,
     /// Analyzer version (crate version plus the rust-analyzer crates' version).
     pub version: String,
+    /// The target triple rust-analyzer analysed for (ADR 0030): links depend on it, since
+    /// nothing is resolved in code switched off for the platform. Absent from syntax-level
+    /// facts, which read every `#[cfg]` branch alike.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// The target was pinned by `areas.toml`; otherwise it is the analysing machine's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub target_pinned: bool,
     /// Crates that fell back to syntax-only facts, with the reason (ADR 10).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub degraded: Vec<Degraded>,

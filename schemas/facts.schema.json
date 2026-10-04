@@ -30,6 +30,17 @@
           "description": "`arch-analyze`.",
           "type": "string"
         },
+        "target": {
+          "description": "The target triple rust-analyzer analysed for (ADR 0030): links depend on it, since\nnothing is resolved in code switched off for the platform. Absent from syntax-level\nfacts, which read every `#[cfg]` branch alike.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_pinned": {
+          "description": "The target was pinned by `areas.toml`; otherwise it is the analysing machine's.",
+          "type": "boolean"
+        },
         "version": {
           "description": "Analyzer version (crate version plus the rust-analyzer crates' version).",
           "type": "string"

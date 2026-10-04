@@ -68,6 +68,8 @@ fn the_planted_violation_is_found_and_covered_by_the_allow() {
         Analyzer {
             name: "hand".into(),
             version: "0".into(),
+            target: None,
+            target_pinned: false,
             degraded: vec![],
         },
     );

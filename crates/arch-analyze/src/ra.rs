@@ -22,6 +22,47 @@ use ra_ap_vfs::{FileId, Vfs, VfsPath};
 /// The rust-analyzer crates' version, recorded in `Analyzer.version`.
 pub const RA_VERSION: &str = "0.0.356";
 
+/// The Rust toolchain picked in the repository root (a committed `rust-toolchain.toml` pins
+/// it), as `rustc -vV` names it. Part of every package id at resolved depth (ADR 0030).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Toolchain {
+    /// This machine's target triple, analysed for unless `areas.toml` pins another.
+    pub host: String,
+    /// `1.90.0`, `1.91.0-nightly`.
+    pub release: String,
+    /// The compiler's commit hash; `unknown` for a compiler built outside a git checkout.
+    pub commit_hash: String,
+}
+
+impl Toolchain {
+    /// Ask `rustc -vV` in `root`, where rustup honours the repository's toolchain file.
+    pub fn of_repo(root: &Path) -> Result<Self> {
+        let out = Command::new("rustc")
+            .arg("-vV")
+            .current_dir(root)
+            .output()
+            .context("running rustc -vV")?;
+        if !out.status.success() {
+            bail!("rustc -vV: {}", String::from_utf8_lossy(&out.stderr).trim());
+        }
+        Self::parse(&String::from_utf8_lossy(&out.stdout)).context("reading rustc -vV")
+    }
+
+    /// Read `rustc -vV`'s output.
+    pub fn parse(text: &str) -> Option<Self> {
+        let field = |name: &str| {
+            text.lines()
+                .find_map(|l| l.strip_prefix(name)?.strip_prefix(": "))
+                .map(|v| v.trim().to_string())
+        };
+        Some(Toolchain {
+            host: field("host")?,
+            release: field("release")?,
+            commit_hash: field("commit-hash").unwrap_or_else(|| "unknown".into()),
+        })
+    }
+}
+
 /// A repository loaded into rust-analyzer.
 pub struct Session {
     pub(crate) db: RootDatabase,
@@ -30,6 +71,9 @@ pub struct Session {
     /// the load is placed with the same rule.
     roots: SourceRootConfig,
     root: PathBuf,
+    /// The triple analysed for: `areas.toml`'s `target`, else the host's.
+    target: String,
+    toolchain: Toolchain,
     // Dropping the client stops the proc-macro server; macros expand lazily, so it must live.
     _proc_macros: ProcMacroClient,
 }
@@ -44,8 +88,10 @@ impl Session {
     /// Load the cargo project at `root` (canonical path). Fails, with the reason to record, when
     /// the type-checked view would be unreliable: cargo cannot describe the workspace, the
     /// standard library's sources are missing, or the proc-macro server does not start
-    /// (arch-design issue 23).
-    pub fn load(root: &Path, target_dir: Option<&Path>) -> Result<Self> {
+    /// (arch-design issue 23). `target` is the triple to analyse for; this machine's when `None`
+    /// (ADR 0030).
+    pub fn load(root: &Path, target_dir: Option<&Path>, target: Option<&str>) -> Result<Self> {
+        let toolchain = Toolchain::of_repo(root)?;
         let sysroot = Command::new("rustc")
             .arg("--print")
             .arg("sysroot")
@@ -65,6 +111,7 @@ impl Session {
         let mut cargo = CargoConfig {
             sysroot: Some(RustLibSource::Discover),
             set_test: true,
+            target: target.map(str::to_string),
             ..Default::default()
         };
         if let Some(dir) = target_dir {
@@ -103,8 +150,20 @@ impl Session {
             vfs,
             roots,
             root: root.to_path_buf(),
+            target: target.map_or_else(|| toolchain.host.clone(), str::to_string),
+            toolchain,
             _proc_macros: proc_macros,
         })
+    }
+
+    /// The triple rust-analyzer analyses for.
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    /// The toolchain picked in the repository root at load.
+    pub fn toolchain(&self) -> &Toolchain {
+        &self.toolchain
     }
 
     /// rust-analyzer's id for a repository-relative file, when it has the file.
@@ -173,5 +232,24 @@ impl Session {
             Durability::LOW,
         );
         Some(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rustc_vv_names_the_host_release_and_commit() {
+        let text = "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1\n";
+        assert_eq!(
+            Toolchain::parse(text),
+            Some(Toolchain {
+                host: "aarch64-apple-darwin".into(),
+                release: "1.99.0".into(),
+                commit_hash: "b940084d7eb6a299eb4bfeb8e34901bc051e7ac4".into(),
+            })
+        );
+        assert_eq!(Toolchain::parse("rustc 1.99.0\n"), None);
     }
 }

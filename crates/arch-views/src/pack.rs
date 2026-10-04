@@ -644,6 +644,8 @@ mod tests {
             Analyzer {
                 name: "hand".into(),
                 version: "0".into(),
+                target: None,
+                target_pinned: false,
                 degraded: vec![],
             },
         );
@@ -679,6 +681,7 @@ mod tests {
         Areas {
             rule: Some(ColumnRule::Hexagon),
             main_bin: None,
+            target: None,
             areas: vec![
                 area("db", Column::Driven, "src/db/**"),
                 area("app", Column::Domain, "src/app/**"),
