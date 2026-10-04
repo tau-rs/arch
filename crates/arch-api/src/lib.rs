@@ -3,19 +3,29 @@
 //!
 //! Depends on every other library crate. Milestone 6 of `handoff-arch.md` brings the two
 //! transports. Present today, for the CLI: [`init()`] and [`check()`] (milestone 4, issue #5),
-//! and [`hook()`] and [`mcp()`], the tool layer an agent runs under (ADR 0012, issue #46). The
-//! CLI depends on this crate only, so the types it prints are re-exported here.
+//! [`hook()`] and [`mcp()`], the tool layer an agent runs under (ADR 0012, issue #46), and the
+//! `session_*` methods of [`session`] (#48). The CLI depends on this crate only, so the types it
+//! prints are re-exported here.
 
 use std::path::PathBuf;
 
 pub mod check;
 pub mod init;
+pub mod session;
 pub mod tool_layer;
 
-pub use arch_facts::{Areas, Column, ColumnRule, Confidence, Level, LinkKind, Witness};
+pub use arch_facts::{
+    Areas, Column, ColumnRule, Confidence, Element, Level, LinkKind, Plan, Question, SessionState,
+    Witness,
+};
 pub use arch_views::{Allowed, Finding};
 pub use check::{CHECK_SCHEMA_VERSION, CheckOutput, Summary, check};
 pub use init::{InitOptions, InitOutcome, init};
+pub use session::{
+    Decision, DriverChoice, ForgeChoice, MergeReport, PrReport, SessionConfig, SessionReport,
+    Strategy, session_accept, session_answer, session_decide, session_merge, session_new,
+    session_pr, session_run, session_status,
+};
 pub use tool_layer::{
     ArchProject, CLAUDE_CO_AUTHOR, HookOutcome, Phase, ToolLayerTarget, hook, mcp,
 };
@@ -54,4 +64,19 @@ pub enum Error {
     /// The tool layer (`arch hook`, `arch mcp`) failed.
     #[error(transparent)]
     ToolLayer(#[from] arch_driver::tool_layer::ToolLayerError),
+    /// The session engine failed or refused.
+    #[error(transparent)]
+    Session(#[from] arch_session::Error),
+    /// The driver could not be set up.
+    #[error(transparent)]
+    Driver(#[from] arch_driver::DriverError),
+    /// The forge could not be reached or refused.
+    #[error(transparent)]
+    Forge(#[from] arch_forge::ForgeError),
+    /// No session with this id: no worktree, draft, merge in progress or note.
+    #[error("no session {0} here: no worktree on arch/{0}, no plan draft, no archive")]
+    NoSession(String),
+    /// A setting or a cache file could not be read.
+    #[error("{0}")]
+    Config(String),
 }

@@ -130,6 +130,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -200,9 +201,11 @@ dependencies = [
  "arch-forge",
  "arch-views",
  "pretty_assertions",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
