@@ -606,6 +606,11 @@ fn the_platform_analysed_for_is_the_areas_toml_target_or_this_machine_s() {
         (facts.analyzer, calls, keys)
     };
 
+    assert_eq!(
+        analyzer.toolchain().map(|t| t.host.clone()),
+        Some(host()),
+        "the toolchain is this machine's, whatever the target"
+    );
     let (linux, calls, linux_keys) = indexed(&mut analyzer);
     assert_eq!(
         (linux.target.as_deref(), linux.target_pinned, calls),

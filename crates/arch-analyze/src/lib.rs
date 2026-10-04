@@ -234,6 +234,13 @@ impl Analyzer {
         self.recompute.as_ref()
     }
 
+    /// The toolchain rust-analyzer was loaded with, at resolved depth: part of every package id
+    /// (ADR 0030), and what the Checks tab shows next to the analyzer version. Not in the facts:
+    /// a Rust release would change every golden file.
+    pub fn toolchain(&self) -> Option<&ra::Toolchain> {
+        self.session.as_ref().map(ra::Session::toolchain)
+    }
+
     /// Why the facts are syntax-level only, when they are.
     pub fn degraded(&self) -> Option<String> {
         match (&self.session, &self.load_error) {

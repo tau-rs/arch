@@ -49,6 +49,51 @@ jobs:
       # analysis, too slow for a debug build.
       - run: cargo test --release -p arch-analyze --test incremental -- --ignored
 
+  same-inputs:
+    name: "same_inputs_same_facts (ADR 0030): ${{ matrix.os }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rust-src
+          # smallsvc pins x86_64-unknown-linux-gnu in its areas.toml: macOS analyses for it.
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: same-inputs
+      - run: scripts/fetch-fixtures.sh
+      # Two checkouts at different paths, each with its own target/ and store: same facts.
+      - run: cargo test --release -p arch-analyze --test same_inputs -- --ignored
+        env:
+          ARCH_FACTS_OUT: ${{ runner.temp }}/facts-${{ runner.os }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: same-inputs-${{ runner.os }}
+          path: ${{ runner.temp }}/facts-${{ runner.os }}.json
+
+  same-inputs-across-machines:
+    name: "same_inputs_same_facts (ADR 0030): Linux and macOS agree"
+    needs: same-inputs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: same-inputs-*
+          merge-multiple: true
+      - name: byte-identical facts
+        run: |
+          set -eu
+          ls -l facts-*.json
+          if ! cmp facts-Linux.json facts-macOS.json; then
+            diff facts-Linux.json facts-macOS.json | head -40
+            exit 1
+          fi
+
   zero2prod:
     name: "arch check on zero2prod (milestone 4)"
     runs-on: ubuntu-latest
