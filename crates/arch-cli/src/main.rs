@@ -605,9 +605,18 @@ fn render_check(output: &CheckOutput) -> String {
     let mut out = String::new();
     let short = output.commit.get(..12).unwrap_or(&output.commit);
     out.push_str(&format!(
-        "arch check · {} @ {short} · {}\n",
+        "arch check · {} @ {short} · {}",
         output.repo, output.analyzer
     ));
+    if let Some(target) = &output.target {
+        let pinned = if output.target_pinned {
+            " (areas.toml)"
+        } else {
+            ""
+        };
+        out.push_str(&format!(" · analyzed for {target}{pinned}"));
+    }
+    out.push('\n');
     if !output.degraded.is_empty() {
         out.push_str(&format!(
             "note: {} crate(s) analyzed at syntax level; their findings warn and never block\n",
@@ -660,4 +669,45 @@ fn render_finding(f: &Finding) -> String {
         ));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn output(target: Option<&str>, target_pinned: bool) -> CheckOutput {
+        CheckOutput {
+            schema_version: arch_api::CHECK_SCHEMA_VERSION,
+            repo: "smallsvc".into(),
+            commit: "ff41a0de9ec0bf6878c46b118b025f50cd30c373".into(),
+            analyzer: "arch-analyze 0.1.0".into(),
+            target: target.map(str::to_string),
+            target_pinned,
+            degraded: vec![],
+            summary: arch_api::Summary {
+                blocking: 0,
+                warnings: 0,
+                allowed: 0,
+            },
+            findings: vec![],
+        }
+    }
+
+    #[test]
+    fn the_header_says_which_platform_the_facts_were_analysed_for() {
+        let first = |o: &CheckOutput| render_check(o).lines().next().unwrap().to_string();
+        assert_eq!(
+            first(&output(Some("x86_64-unknown-linux-gnu"), true)),
+            "arch check · smallsvc @ ff41a0de9ec0 · arch-analyze 0.1.0 · analyzed for x86_64-unknown-linux-gnu (areas.toml)"
+        );
+        assert_eq!(
+            first(&output(Some("aarch64-apple-darwin"), false)),
+            "arch check · smallsvc @ ff41a0de9ec0 · arch-analyze 0.1.0 · analyzed for aarch64-apple-darwin"
+        );
+        // Syntax-level facts read every `#[cfg]` branch: no platform to name.
+        assert_eq!(
+            first(&output(None, false)),
+            "arch check · smallsvc @ ff41a0de9ec0 · arch-analyze 0.1.0"
+        );
+    }
 }

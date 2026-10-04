@@ -50,6 +50,7 @@ query without the map growing a box per field.
 | 16 commits as facts with trailers | `Commit`, `Trailer` |
 | 21 content-addressed element ids | `Commit.element` |
 | 28 entry kinds: main · framework · spawned worker | `Entry.kind`, `Entry.confidence` |
+| 30 inputs outside the tree; the target analysed for | `Analyzer.target`, `Analyzer.target_pinned`; `Areas.target` |
 
 Open: the link-kind list (FINDINGS F-3, arch-design issue 16, arch issue #10).
 
@@ -101,7 +102,7 @@ flowchart LR
 
 | file | type | content |
 |---|---|---|
-| `areas.toml` | `Areas` | overrides only: `rule`, `main_bin`, `[[area]] name · paths · side · order` |
+| `areas.toml` | `Areas` | overrides only: `rule`, `main_bin`, `target` (ADR 0030), `[[area]] name · paths · side · order` |
 | `areas/<name>.md` | text | one description per area, read into the context pack |
 | `rules` | `Rules` | TOML: `[[rule]] subject · must_not · targets · level`, `[lints] name = true/false or "block"/"warn"/"off"` (both provisional readings accepted until arch-design#4 decides); `Rules::v1_template()` is ADR 0006 |
 | `allows` | `Allows` | TOML: `[[allow]] site · rule · target? · reason · by · at?` |

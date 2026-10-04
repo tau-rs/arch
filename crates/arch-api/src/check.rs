@@ -26,6 +26,13 @@ pub struct CheckOutput {
     pub commit: String,
     /// The analyzer and its version.
     pub analyzer: String,
+    /// The target triple the facts were analysed for, at resolved depth (ADR 0030): links in
+    /// code switched off for that platform are not resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// `target` was pinned by `.arch/areas.toml`; otherwise it is the analysing machine's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub target_pinned: bool,
     /// Crates analyzed at syntax level only: their facts are guessed, so findings on them warn
     /// and never block (ADR 0009, 0010).
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -86,6 +93,8 @@ pub fn check(repo: &Path) -> Result<CheckOutput, Error> {
         repo: facts.repo.name,
         commit: facts.repo.commit,
         analyzer: format!("{} {}", facts.analyzer.name, facts.analyzer.version),
+        target: facts.analyzer.target,
+        target_pinned: facts.analyzer.target_pinned,
         degraded: facts.analyzer.degraded,
         summary: Summary {
             blocking: report.blocking().count(),
