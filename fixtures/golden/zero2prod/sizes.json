@@ -1,0 +1,14 @@
+{
+  "repo": "zero2prod",
+  "commit": "970987c5f793af6fc8e557731c9bbb23b620451e",
+  "measured_at": "2026-10-02",
+  "measured_by": "tools/measure-sizes.sh",
+  "crates": 1,
+  "rust_files": 46,
+  "rust_lines": 3116,
+  "decls": 183,
+  "decls_by_kind": { "fn": 105, "struct": 26, "enum": 7, "trait": 0, "type": 7, "const": 1, "static": 0, "mod": 37 },
+  "items": null,
+  "links": null,
+  "notes": "crates from cargo metadata --no-deps; decls is a syntactic upper bound on items (see script header; fn includes methods); items and links are filled by arch-analyze; smallsvc is in-tree so its commit is this repo's"
+}

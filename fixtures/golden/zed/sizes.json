@@ -1,0 +1,14 @@
+{
+  "repo": "zed",
+  "commit": "76659a55a8c10ed355a070f8764a0b1733e3c115",
+  "measured_at": "2026-10-02",
+  "measured_by": "tools/measure-sizes.sh",
+  "crates": 253,
+  "rust_files": 1974,
+  "rust_lines": 1681560,
+  "decls": 71418,
+  "decls_by_kind": { "fn": 54885, "struct": 6666, "enum": 2003, "trait": 383, "type": 1595, "const": 2914, "static": 465, "mod": 2524 },
+  "items": null,
+  "links": null,
+  "notes": "crates from cargo metadata --no-deps; decls is a syntactic upper bound on items (see script header; fn includes methods); items and links are filled by arch-analyze; smallsvc is in-tree so its commit is this repo's"
+}

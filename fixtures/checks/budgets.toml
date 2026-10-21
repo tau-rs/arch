@@ -1,0 +1,67 @@
+# Performance budgets (tau-rs/arch-design ADR 0026, spec §5).
+#
+# A budget is a ceiling: the benchmark named here fails its build when the measurement reaches `below`.
+# Each holds at its stated size on the reference machine; a smaller repo must meet it too, and a developer
+# laptop is faster, never slower. `runs_in` is the repo whose CI runs the benchmark; this file only names it.
+
+[reference_machine]
+name = "GitHub-hosted runner, ubuntu-24.04 standard (public repository)"
+# The `runs-on` label every budget job uses. Pinned, not `ubuntu-latest`, so the machine does not move.
+runs_on = "ubuntu-24.04"
+cpus = 4
+memory_gb = 16
+
+[[budget]]
+name = "first index"
+benchmark = "first_index_cold"
+below = 5
+unit = "s"
+measures = "cold: no .arch/cache/, cargo metadata answers, target/ holds build-script and proc-macro artifacts from a prior cargo check; from arch serve (or arch init) start to the first complete facts set for the unit at resolved confidence, dependencies name-resolved; on a repo of 1,200 items"
+fixture = "every pin; the 1,200-item line is read against the pin whose sizes.json items is nearest 1,200"
+runs_in = "tau-rs/arch"
+
+[[budget]]
+name = "one-file recompute"
+benchmark = "recompute_one_file"
+below = 500
+unit = "ms"
+measures = "one source file saved; from the save on disk to the new facts"
+fixture = "every pin"
+runs_in = "tau-rs/arch"
+
+[[budget]]
+name = "memory"
+benchmark = "memory_rss_peak"
+below = 500
+unit = "MB"
+measures = "peak resident set of the arch process alone, from start through first index and while serving a view of 5,000 visible items; the renderer is outside this budget"
+fixture = "zed"
+runs_in = "tau-rs/arch"
+
+[[budget]]
+name = "fold/expand"
+benchmark = "fold_expand"
+below = 100
+unit = "ms"
+measures = "keypress to paint, end to end"
+fixture = "fixtures-for-ui"
+runs_in = "tau-rs/arch-app"
+
+[[budget]]
+name = "first paint"
+benchmark = "first_paint"
+below = 2
+unit = "s"
+measures = "engine running, app cold; a 1,200-item repo"
+fixture = "fixtures-for-ui"
+runs_in = "tau-rs/arch-app"
+
+[[budget]]
+name = "pan/zoom"
+benchmark = "pan_zoom_fps"
+# A floor, not a ceiling: the frame rate must stay at or above this.
+at_least = 60
+unit = "fps"
+measures = "pan and zoom at 5,000 visible items"
+fixture = "fixtures-for-ui"
+runs_in = "tau-rs/arch-app"

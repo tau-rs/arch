@@ -1,0 +1,28 @@
+# Dependency rules, the `arch init` template (ADR 6): subject · must not · targets · level.
+# Shape accepted as schema version 0 — tau-rs/arch-design#4, tau-rs/arch#13.
+
+[[rule]]
+subject = "domain"
+must_not = "depend-on"
+targets = ["driving", "driven"]
+level = "block"
+
+[[rule]]
+subject = "driving"
+must_not = "depend-on"
+targets = ["externals"]
+level = "block"
+
+[[rule]]
+subject = "domain"
+must_not = "depend-on"
+targets = ["externals"]
+level = "block"
+
+[lints]
+# "five lints on" per ADR 6; names as the design pages print them (tau-rs/arch-design#4, tau-rs/arch#13)
+god-module = "warn"
+cycle = "warn"
+leaky-port = "warn"
+speculative-abstraction = "warn"
+unresolved-dyn = "warn"

@@ -1,0 +1,32 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          # golden.rs reads `git log -- repos/<repo>/`; a shallow clone has no history to read.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            repos/smallsvc
+      - name: pins are recorded
+        run: git submodule status | tee /dev/stderr | awk '{ if (length($1) < 40) exit 1 }'
+      - name: harness
+        run: cargo test --locked
+      - name: smallsvc
+        working-directory: repos/smallsvc
+        run: cargo test --locked
+      - name: no warnings
+        run: |
+          cargo clippy --all-targets -- -D warnings
+          (cd repos/smallsvc && cargo clippy --all-targets -- -D warnings)

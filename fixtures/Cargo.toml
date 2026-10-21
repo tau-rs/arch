@@ -1,0 +1,5 @@
+[workspace]
+resolver = "2"
+members = ["checks"]
+# The analyzed repos are standalone; never workspace members.
+exclude = ["repos"]

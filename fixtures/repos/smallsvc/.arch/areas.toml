@@ -1,0 +1,61 @@
+# Overrides only (ADR 4): areas derive from the module tree; this file names the rule,
+# the main bin, and the side of each top-level area.
+rule = "hexagon"
+main_bin = "orderly"
+# One map on every machine (ADR 0030): analyse for Linux, CI's platform, wherever arch runs.
+# On another platform: rustup target add x86_64-unknown-linux-gnu.
+target = "x86_64-unknown-linux-gnu"
+
+[[area]]
+name = "http"
+side = "driving"
+paths = ["src/adapters/http/**"]
+order = 1
+
+[[area]]
+name = "app"
+side = "domain"
+paths = ["src/app/**", "src/worker.rs", "src/config.rs"]
+order = 1
+
+[[area]]
+name = "domain"
+side = "domain"
+paths = ["src/domain/**"]
+order = 2
+
+[[area]]
+name = "ports"
+side = "domain"
+paths = ["src/ports/**"]
+order = 3
+
+[[area]]
+name = "postgres"
+side = "driven"
+paths = ["src/adapters/postgres/**", "migrations/**"]
+order = 1
+
+[[area]]
+name = "memory"
+side = "driven"
+paths = ["src/adapters/memory/**"]
+order = 2
+
+[[area]]
+name = "stripe"
+side = "driven"
+paths = ["src/adapters/stripe/**"]
+order = 3
+
+[[area]]
+name = "carrier"
+side = "driven"
+paths = ["src/adapters/carrier/**"]
+order = 4
+
+[[area]]
+name = "email"
+side = "driven"
+paths = ["src/adapters/email/**"]
+order = 5
