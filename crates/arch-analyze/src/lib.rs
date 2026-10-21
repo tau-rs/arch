@@ -767,7 +767,7 @@ fn analyzer_inputs(head: &TreeHead, toolchain: Option<&ra::Toolchain>) -> String
 }
 
 /// Why a crate's facts are partly guessed while rust-analyzer is loaded: it has no module for
-/// these files, which the syntax-level walk reached (a module a `cfg` compiles out).
+/// these files, which the syntax-level walk reached, and no `cfg` switches them off (#77).
 fn unresolved_reason(files: &[String]) -> String {
     format!(
         "rust-analyzer has no module for {}: links guessed",

@@ -50,8 +50,8 @@ pub struct Output {
     pub walk: Vec<String>,
     /// The packages whose crates walked each Rust file, by index into the plan's packages.
     pub owners: BTreeMap<String, BTreeSet<usize>>,
-    /// With rust-analyzer: the walked files it has no module for, by package, whose links stay
-    /// guessed (a module a `cfg` compiles out).
+    /// With rust-analyzer: the walked files it has no module for although no `cfg` switches them
+    /// off, by package, whose links stay guessed.
     pub unresolved: BTreeMap<String, Vec<String>>,
 }
 
@@ -111,6 +111,9 @@ struct SrcFile {
     lines: Lines,
     src: ast::SourceFile,
     module: Vec<String>,
+    /// The out-of-line `mod` item that declares the file, by index into the items; none for a
+    /// crate root.
+    decl: Option<usize>,
 }
 
 struct Krate {
@@ -232,7 +235,8 @@ struct Unit<'a> {
     lock: HashMap<String, (String, u32)>,
     /// Set while links come from the type-checked view: they are `resolved` and need no reason.
     resolved: bool,
-    /// Files rust-analyzer has no module for: their links stay guessed.
+    /// Files rust-analyzer has no module for although no `cfg` switches them off: their links
+    /// stay guessed.
     unresolved: Vec<usize>,
 }
 
@@ -378,10 +382,10 @@ impl<'a> Unit<'a> {
                 sees: plan.closure(ut.package),
             });
             let mut ids = Ids::default();
-            let mut queue: Vec<(PathBuf, Vec<String>, bool)> =
-                vec![(ut.target.root.clone(), Vec::new(), true)];
+            let mut queue: Vec<(PathBuf, Vec<String>, bool, Option<usize>)> =
+                vec![(ut.target.root.clone(), Vec::new(), true, None)];
             let mut seen = HashSet::new();
-            while let Some((rel, module, is_root)) = queue.pop() {
+            while let Some((rel, module, is_root, decl)) = queue.pop() {
                 if !seen.insert(rel.clone()) {
                     continue;
                 }
@@ -401,6 +405,7 @@ impl<'a> Unit<'a> {
                     &mut ids,
                 );
                 let fi = u.files.len();
+                let first_item = u.items.len();
                 u.items.extend(found.into_iter().map(|f| It {
                     f,
                     file: fi,
@@ -432,7 +437,7 @@ impl<'a> Unit<'a> {
                         }
                     };
                     if let Some(child) = child {
-                        queue.push((child, child_module, false));
+                        queue.push((child, child_module, false, Some(first_item + d.item)));
                     }
                 }
                 u.files.push(SrcFile {
@@ -441,6 +446,7 @@ impl<'a> Unit<'a> {
                     lines,
                     src,
                     module,
+                    decl,
                 });
             }
         }

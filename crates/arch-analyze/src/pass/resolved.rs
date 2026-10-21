@@ -6,13 +6,15 @@
 use std::collections::{HashMap, HashSet};
 
 use arch_facts::{Access, ItemKind, LinkKind, Target};
-use ra_ap_hir::{AsAssocItem, AssocItemContainer, Semantics, Variant, attach_db};
+use ra_ap_hir::{
+    AsAssocItem, AssocItemContainer, CfgExpr, CfgOptions, Semantics, Variant, attach_db,
+};
 use ra_ap_ide::TryToNav;
 use ra_ap_ide_db::RootDatabase;
 use ra_ap_ide_db::base_db::CrateOrigin;
 use ra_ap_ide_db::defs::{Definition, NameClass, NameRefClass};
-use ra_ap_syntax::ast::{self, AstNode, HasVisibility};
-use ra_ap_syntax::{SyntaxKind, SyntaxNode, SyntaxToken};
+use ra_ap_syntax::ast::{self, AstNode, HasAttrs, HasVisibility};
+use ra_ap_syntax::{NodeOrToken, SyntaxKind, SyntaxNode, SyntaxToken, WalkEvent};
 
 use super::{Ctx, Tgt, Unit};
 use crate::ra::Session;
@@ -29,6 +31,19 @@ fn is_pattern(l: &arch_facts::Link) -> bool {
             | LinkKind::Decorates
     ) || matches!(&l.to, Target::Table(_))
         || matches!(&l.to, Target::External(id) if !id.starts_with("external:crate:"))
+}
+
+/// Whether a `cfg` on `node` is false for the crate's `cfg` options: the code is switched off
+/// for the target analysed.
+fn cfg_off(cfg: &CfgOptions, node: &SyntaxNode) -> bool {
+    ast::AnyHasAttrs::cast(node.clone()).is_some_and(|n| {
+        n.attrs()
+            .filter_map(|a| match a.meta()? {
+                ast::Meta::CfgMeta(m) => m.cfg_predicate(),
+                _ => None,
+            })
+            .any(|p| cfg.check(&CfgExpr::parse_from_ast(p)) == Some(false))
+    })
 }
 
 struct Resolver<'a, 'db> {
@@ -69,28 +84,34 @@ impl Unit<'_> {
             cache: HashMap::new(),
         };
 
-        // A file is resolved when rust-analyzer has it in a crate's module tree: one it holds
-        // outside every crate (a module a `cfg` compiles out) keeps its guessed links.
-        let (loaded, unresolved): (Vec<_>, Vec<_>) = (0..self.files.len())
+        // A file is resolved when rust-analyzer has it in a crate's module tree. One it has none
+        // for is either switched off by a `cfg` for the target analysed, and gets what the same
+        // code written inline gets (no name links: nothing is resolved in it, ADR 0030), or one
+        // rust-analyzer cannot take, which keeps its guessed links and degrades its crate (#77).
+        let ids: Vec<Option<ra_ap_vfs::FileId>> = (0..self.files.len())
             .map(|fi| {
-                let id = session
+                session
                     .file_id(&self.files[fi].path)
-                    .filter(|id| r.sema.file_to_module_def(*id).is_some());
-                (fi, id)
+                    .filter(|id| r.sema.file_to_module_def(*id).is_some())
             })
-            .partition(|(_, id)| id.is_some());
-        self.unresolved = unresolved.into_iter().map(|(fi, _)| fi).collect();
-        let loaded: Vec<_> = loaded
-            .into_iter()
-            .filter(|(fi, _)| only.is_none_or(|o| o.contains(fi)))
             .collect();
-        let loaded: Vec<(usize, ra_ap_vfs::FileId)> = loaded
-            .into_iter()
-            .filter_map(|(fi, id)| Some((fi, id?)))
+        // A file's parent comes before it in the walk.
+        let mut off = vec![false; self.files.len()];
+        for fi in 0..self.files.len() {
+            off[fi] = ids[fi].is_none() && self.switched_off(&r, &ids, &off, fi);
+        }
+        self.unresolved = (0..self.files.len())
+            .filter(|fi| ids[*fi].is_none() && !off[*fi])
             .collect();
-        let resolved_files: std::collections::HashSet<&str> = loaded
-            .iter()
-            .map(|(fi, _)| self.files[*fi].path.as_str())
+        let in_scope = |fi: &usize| only.is_none_or(|o| o.contains(fi));
+        let loaded: Vec<(usize, ra_ap_vfs::FileId)> = (0..self.files.len())
+            .filter(in_scope)
+            .filter_map(|fi| Some((fi, ids[fi]?)))
+            .collect();
+        // Their guessed name links give way: to resolved ones, or to none when switched off.
+        let resolved_files: HashSet<&str> = (0..self.files.len())
+            .filter(|fi| in_scope(fi) && (ids[*fi].is_some() || off[*fi]))
+            .map(|fi| self.files[fi].path.as_str())
             .collect();
         let by_id = &self.by_id;
         let items = &self.items;
@@ -122,17 +143,33 @@ impl Unit<'_> {
         self.resolved = true;
         for (fi, file_id) in loaded {
             let src = r.sema.parse_guess_edition(file_id);
-            let tokens: Vec<SyntaxToken> = src
-                .syntax()
-                .descendants_with_tokens()
-                .filter_map(|e| e.into_token())
-                .filter(|t| {
-                    matches!(
-                        t.kind(),
-                        SyntaxKind::IDENT | SyntaxKind::SELF_TYPE_KW | SyntaxKind::INT_NUMBER
-                    )
-                })
-                .collect();
+            // Code a `cfg` switches off gives no name links (ADR 0030): rust-analyzer has no
+            // definition for it and would resolve its names from the module around it (#96).
+            let db = r.sema.db;
+            let cfg = r
+                .sema
+                .file_to_module_def(file_id)
+                .map(|m| m.krate(db).cfg(db));
+            let mut tokens: Vec<SyntaxToken> = Vec::new();
+            let mut walk = src.syntax().preorder_with_tokens();
+            while let Some(event) = walk.next() {
+                match event {
+                    WalkEvent::Enter(NodeOrToken::Node(n))
+                        if cfg.is_some_and(|c| cfg_off(c, &n)) =>
+                    {
+                        walk.skip_subtree();
+                    }
+                    WalkEvent::Enter(NodeOrToken::Token(t))
+                        if matches!(
+                            t.kind(),
+                            SyntaxKind::IDENT | SyntaxKind::SELF_TYPE_KW | SyntaxKind::INT_NUMBER
+                        ) =>
+                    {
+                        tokens.push(t);
+                    }
+                    _ => {}
+                }
+            }
             for token in tokens {
                 let at: u32 = token.text_range().start().into();
                 let Some(owner) = self.owner_at(fi, at) else {
@@ -150,6 +187,32 @@ impl Unit<'_> {
             }
         }
         self.resolved = false;
+    }
+
+    /// Whether the file `fi`, which rust-analyzer has no module for, is switched off for the
+    /// target analysed: a `cfg` on its `mod` declaration, or on an item around it, is false for
+    /// the declaring crate, or the file declaring it is switched off itself.
+    fn switched_off(
+        &self,
+        r: &Resolver<'_, '_>,
+        ids: &[Option<ra_ap_vfs::FileId>],
+        off: &[bool],
+        fi: usize,
+    ) -> bool {
+        let Some(decl) = self.files[fi].decl else {
+            return false;
+        };
+        let parent = self.items[decl].file;
+        let Some(parent_id) = ids[parent] else {
+            return off[parent];
+        };
+        let Some(module) = r.sema.file_to_module_def(parent_id) else {
+            return false;
+        };
+        let db = r.sema.db;
+        let cfg = module.krate(db).cfg(db);
+        std::iter::successors(Some(self.items[decl].f.node.clone()), SyntaxNode::parent)
+            .any(|n| cfg_off(cfg, &n))
     }
 
     /// Classify one token and emit its link. False when the token names nothing here.

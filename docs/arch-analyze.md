@@ -112,6 +112,13 @@ what the facts were computed from. A change to `target` in `areas.toml` loads ru
 again, like a manifest change. Syntax-level facts read every `#[cfg]` branch alike: they record no
 target and none of these inputs is in their key.
 
+Code a `cfg` switches off for the target gives no name links at resolved depth, whether written
+inline or in its own file (#77, #96): its items are on the map, with no arrows but its pattern links
+(routes, SQL, wiring...), which stay `guessed` as everywhere. Whether a `cfg` is off is rust-analyzer's
+own evaluation for the crate. A switched-off module does not degrade its crate. A walked file
+rust-analyzer has no module for although no `cfg` switches it off does: its links stay `guessed`
+and `analyzer.degraded` names it (`rust-analyzer has no module for src/x.rs: links guessed`).
+
 When the pinned target is this machine's own triple, cargo is not given `--target`: it keeps a
 `--target` build in its own directory, and the `target/` already built would not be reused (ADR
 0026). A foreign pin is a real cross check: `rustup target add <triple>`, and a dependency's C

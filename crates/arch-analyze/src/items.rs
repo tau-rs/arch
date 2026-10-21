@@ -105,6 +105,8 @@ pub struct ModDecl {
     pub parent: Vec<String>,
     /// `#[path = "…"]`, when given.
     pub path_attr: Option<String>,
+    /// The `mod` item that declares it, by index into the walk's items.
+    pub item: usize,
 }
 
 /// Disambiguates repeated ids inside one crate: the second gets `.2`.
@@ -464,6 +466,7 @@ impl Walker<'_> {
                                 name: n,
                                 parent: scope.module.to_vec(),
                                 path_attr,
+                                item: i,
                             });
                         }
                     }
