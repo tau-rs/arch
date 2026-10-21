@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>arch · shell and flows</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#F3F5F6;--paper:#FFFFFF;--well:#E9EDEF;--ink:#17242B;--ink2:#4A5B64;--mute:#8A9AA3;--line:#CBD4D9;--line2:#E1E7EA;
+--sel:#1F5FA8;--selBg:#E3EEFB;--sug:#B87A0E;--sugBg:#FBF2DE;--ok:#2E7D5B;--okBg:#E3F2EA;--bad:#B23A33;--badBg:#FBE7E5;--yk:#6B5BD2;--ykBg:#EEEBFB;--rl:#1D9E75;--nb:#D9891B;
+--sans:'IBM Plex Sans',system-ui,sans-serif;--mono:'IBM Plex Mono',ui-monospace,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141B1F;--paper:#1B2429;--well:#22303A;--ink:#E6EDF0;--ink2:#B3C0C7;--mute:#7C8C95;--line:#33434C;--line2:#28353D;--selBg:#1E3350;--sugBg:#3D3116;--okBg:#1D3A2E;--badBg:#45231F;--ykBg:#2C2748}}
+:root[data-theme="dark"]{--bg:#141B1F;--paper:#1B2429;--well:#22303A;--ink:#E6EDF0;--ink2:#B3C0C7;--mute:#7C8C95;--line:#33434C;--line2:#28353D;--selBg:#1E3350;--sugBg:#3D3116;--okBg:#1D3A2E;--badBg:#45231F;--ykBg:#2C2748}
+html,body{margin:0;height:100%}body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:5px 11px;cursor:pointer}
+button:hover{background:var(--well)}button.primary{background:var(--sel);color:#fff;border-color:var(--sel)}button.quiet{border-color:transparent;background:transparent;color:var(--ink2)}button.sm{font-size:12px;padding:3px 9px}
+.page{max-width:1240px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:22px;font-weight:600;margin:0 0 4px}.lead{color:var(--ink2);max-width:76ch;margin:0 0 20px}
+.steps{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-bottom:16px}
+.step{text-align:left;padding:8px 10px;border-radius:6px;border:1px solid var(--line);background:var(--paper)}.step b{display:block;font-weight:600;font-size:13px}.step span{color:var(--ink2);font-size:12px}
+.step.on{border-color:var(--sel);box-shadow:inset 0 0 0 1px var(--sel)}
+.shell{background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.top{display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid var(--line2);font-size:13px}
+.top .brand{font-weight:600}.top .lbl{color:var(--mute)}
+.cur{display:flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid var(--line);border-radius:5px;background:var(--paper);font-family:var(--mono);font-size:12.5px;cursor:pointer;position:relative}
+.dd{position:absolute;top:30px;left:0;width:330px;background:var(--paper);border:1px solid var(--line);border-radius:6px;box-shadow:0 10px 28px rgba(0,0,0,.14);font-family:var(--sans);font-size:12.5px;z-index:3;text-align:left}
+.dd h6{margin:0;padding:8px 12px 2px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);font-weight:500}
+.dd .i{display:flex;gap:8px;align-items:center;padding:6px 12px;cursor:pointer}.dd .i:hover{background:var(--well)}.dd .i.on{background:var(--selBg)}
+.dd .m{font-family:var(--mono)}.dd .r{margin-left:auto;color:var(--ink2);font-size:11.5px;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:4px;display:inline-block;flex:none}
+.tog{display:flex;gap:2px;background:var(--well);border-radius:6px;padding:2px}.tog span{padding:3px 10px;border-radius:4px;color:var(--ink2);cursor:pointer}.tog span.on{background:var(--paper);color:var(--ink);font-weight:500}.tog span.off{opacity:.4;cursor:default}
+.top .right{margin-left:auto;display:flex;gap:10px;align-items:center;color:var(--ink2)}
+.pill{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:10px;padding:1px 8px}
+.strip{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--line2);font-size:13px;color:var(--ink2);min-height:42px}
+.strip.amber{background:var(--sugBg);color:var(--ink)}.strip.yk{background:var(--ykBg);color:var(--ink)}.strip .r{margin-left:auto;display:flex;gap:6px}
+.body{display:grid;grid-template-columns:210px minmax(0,1fr) 330px;height:540px}
+.left{overflow:auto}.right{overflow:hidden}
+.left{border-right:1px solid var(--line2);padding:10px 8px;font-size:12.5px;overflow:hidden}
+.left h6{margin:0 0 4px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);font-weight:500;display:flex}.left h6 span{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400}
+.tr{padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:4px;display:flex;align-items:center;gap:6px}
+.tr.d{color:var(--ink);font-weight:500}.tr.f{padding-left:20px;color:var(--ink2)}.tr.on{background:var(--selBg);color:var(--sel)}.tr.dim{opacity:.5}
+.tr .m{font-family:var(--mono);font-size:11.5px;color:var(--mute);margin-left:auto}
+.tr .bd{font-size:10px;padding:0 5px;border-radius:3px;background:var(--well);color:var(--ink2);margin-left:auto}.bd.b{background:var(--badBg);color:var(--bad)}.bd.a{background:var(--sugBg);color:var(--sug)}.bd.g{background:var(--okBg);color:var(--ok)}
+.l1{padding-left:20px}.l2{padding-left:34px}
+.sep{border-top:1px solid var(--line2);margin:10px 0 8px}
+.map{padding:12px;position:relative}
+.right{border-left:1px solid var(--line2);display:flex;flex-direction:column;min-height:0;font-size:12.5px}
+.right .hd{padding:8px 12px;border-bottom:1px solid var(--line2);display:flex;gap:8px;align-items:baseline;color:var(--mute);font-size:11.5px}.right .hd b{font-family:var(--mono);color:var(--ink);font-weight:500;font-size:13px}.right .hd .r{margin-left:auto}
+.code{font-family:var(--mono);font-size:11.5px;line-height:1.65;padding:6px 0}
+.ln{display:flex;white-space:nowrap;overflow:hidden;padding:0 10px}.ln .n{width:22px;text-align:right;color:var(--mute);margin-right:10px;flex:none}.ln .t{color:var(--ink2)}.ln.hl{background:var(--selBg)}.ln.hl .t{color:var(--ink)}.ln.add{background:var(--okBg)}.ln.del{background:var(--badBg)}.ln.lens .t{font-family:var(--sans);font-size:10.5px;color:var(--mute)}.ln.lens a{margin-right:10px;color:var(--ink2)}.ln.lens a.w{color:var(--bad)}.ln .k{color:var(--sel)}
+.hint{font-family:var(--sans);font-size:10px;padding:0 5px;border-radius:3px;margin-left:8px;background:var(--well);color:var(--mute)}.hint.ok{background:var(--okBg);color:var(--ok)}.hint.pl{background:var(--sugBg);color:var(--sug)}
+.chat{display:flex;flex-direction:column;flex:1;min-height:0}
+.msgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.msg{padding:7px 10px;border-radius:8px;background:var(--well);line-height:1.45;max-width:94%}.msg.ag{background:var(--ykBg)}.msg.me{background:var(--selBg);align-self:flex-end}.msg .who{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--mute);margin-bottom:2px}.msg .tool{font-family:var(--mono);font-size:11px;color:var(--ink2);margin-top:4px}
+.q{border:1px dashed var(--sug);background:var(--sugBg);border-radius:8px;padding:8px 10px;line-height:1.45}.q .opts{display:flex;flex-direction:column;gap:4px;margin-top:6px}.q button{text-align:left;font-size:12px;padding:3px 8px}
+.cin{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--line2)}.cin input{flex:1;font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink)}
+.hk{margin:6px 10px;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:11px}.hk .hh{background:var(--well);padding:3px 8px;color:var(--ink2);display:flex;gap:8px;font-family:var(--sans)}.hk .hh .sg{margin-left:auto;font-size:10px;padding:0 5px;border-radius:3px;background:var(--badBg);color:var(--bad)}.hk .hh .sg.g{background:var(--okBg);color:var(--ok)}.hk .hh .sg.c{background:var(--selBg);color:var(--sel)}.hk .l{padding:0 8px;white-space:pre}.hk .l.a{background:var(--okBg)}.hk .l.d{background:var(--badBg)}
+.fix{margin:0 10px 8px;border:1px dashed var(--sel);border-radius:6px;padding:6px 8px;font-size:11.5px}.fix b{color:var(--sel);font-weight:500}.fix .a{display:flex;gap:4px;margin-top:5px}
+.vw{display:flex;justify-content:flex-end;padding:6px 12px;font-size:11.5px;color:var(--ink2);gap:6px;align-items:center}
+.ask{padding:10px 12px;display:flex;flex-direction:column;gap:8px}.ask .qq{background:var(--selBg);border-radius:8px;padding:7px 10px;align-self:flex-end}.ask .ran{font-family:var(--mono);font-size:11px;color:var(--ink2);background:var(--well);border-radius:6px;padding:6px 8px;line-height:1.7}.ask .ans{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 10px;line-height:1.5}.ask .chip{font-family:var(--mono);font-size:11px;border:1px solid var(--sel);color:var(--sel);border-radius:4px;padding:0 4px}.ask .wit{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-family:var(--mono);font-size:11px}.ask .wit span{border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--ink2)}
+.status{display:flex;gap:16px;padding:7px 14px;border-top:1px solid var(--line2);font-size:12px;color:var(--ink2)}.status .r{margin-left:auto}
+.note{margin-top:16px;padding:14px 16px;border-left:3px solid var(--sel);background:var(--paper);border-radius:0 6px 6px 0;font-size:13.5px;max-width:80ch}.note b{font-weight:600}
+.plan{position:absolute;right:12px;top:12px;width:250px;background:var(--paper);border:1px solid var(--sug);border-radius:8px;padding:10px 12px;font-size:12px}
+.plan h4{margin:0 0 6px;font-size:12.5px;font-weight:600}.plan .el{display:flex;gap:6px;padding:3px 0;border-top:1px solid var(--line2);align-items:center}.plan .el .k{font-size:10px;color:var(--mute);width:48px}.plan .el .m{font-family:var(--mono);font-size:11.5px}.plan .el .s{margin-left:auto;font-size:10px;color:var(--sug)}
+.plan textarea{width:100%;height:44px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:6px;resize:none;margin-bottom:6px;background:var(--paper);color:var(--ink)}
+
+.psw{display:flex;gap:2px;background:var(--well);border-radius:6px;padding:2px;margin:0 0 8px;font-size:12px}
+.psw span{flex:1;text-align:center;padding:2px 0;border-radius:4px;color:var(--ink2);cursor:pointer}.psw span.on{background:var(--paper);color:var(--ink);font-weight:500}
+.agr{padding:2px 6px;border-radius:4px;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden}
+.agr.on{background:var(--selBg)}.agr .m{font-family:var(--mono);font-size:11.5px;color:var(--ink2)}.agr .st{margin-left:auto;font-size:10px;padding:0 5px;border-radius:3px;background:var(--well);color:var(--ink2)}
+.agr .st.a{background:var(--sugBg);color:var(--sug)}.agr .st.g{background:var(--okBg);color:var(--ok)}
+.agr.b1{padding-left:18px}.agr.b2{padding-left:32px}.agr.b3{padding-left:46px}
+.agr.dim{opacity:.55}
+
+.back{display:flex;align-items:center;gap:6px;padding:4px 6px;margin-bottom:6px;font-size:12px;color:var(--ink2);cursor:pointer;border-bottom:1px solid var(--line2)}
+.back b{font-family:var(--mono);font-weight:500;color:var(--ink);font-size:12px}
+.planp{display:flex;flex-direction:column;flex:1;min-height:0}
+.planp .doc{padding:10px 12px;border-bottom:1px solid var(--line2)}
+.planp .doc h4{margin:0 0 6px;font-size:13px;font-weight:600}
+.planp .el{display:flex;gap:6px;padding:4px 0;border-top:1px solid var(--line2);align-items:center;font-size:12px}
+.planp .el .k{font-size:10px;color:var(--mute);width:48px;flex:none}.planp .el .m{font-family:var(--mono);font-size:11.5px}.planp .el .s{margin-left:auto;font-size:10px;color:var(--sug)}.planp .el .s.ed{color:var(--sel)}
+.planp .el .x{color:var(--mute);cursor:pointer;margin-left:6px}
+.planp .th{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.planp .act{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--line2);background:var(--paper)}
+.planp .act .n{margin-left:auto;font-size:11px;color:var(--mute);align-self:center}
+
+.focus .body{grid-template-columns:minmax(0,1fr) 320px}
+.focus .left{display:none}
+.intent{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line2);background:var(--sugBg)}
+.intent input{flex:1;font:inherit;font-size:14px;padding:6px 10px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink)}
+.intent .m{font-size:12px;color:var(--ink2);white-space:nowrap}
+.chg{font-size:11px;color:var(--ok);background:var(--okBg);border-radius:4px;padding:2px 6px;display:inline-block;margin-top:4px}
+.newbtn{background:var(--sel);color:#fff;border-color:var(--sel)}
+
+.focus .body{grid-template-columns:auto minmax(0,1fr) 320px}
+.focus .left{display:block;width:34px;padding:8px 4px;transition:width .15s}
+.focus .left.open{width:210px;padding:10px 8px}
+.rail{writing-mode:vertical-rl;transform:rotate(180deg);font-size:11.5px;color:var(--ink2);cursor:pointer;padding:6px 2px;white-space:nowrap}
+.rail:hover{color:var(--sel)}
+.focus .left.open .rail{writing-mode:horizontal-tb;transform:none;padding:0 6px 6px;border-bottom:1px solid var(--line2);margin-bottom:6px;display:flex;gap:6px;align-items:center}
+
+.mg{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}
+.sec{padding:8px 12px;border-bottom:1px solid var(--line2)}
+.sec h5{margin:0 0 4px;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center}
+.sec h5 .s{margin-left:auto;font-size:10.5px;padding:0 6px;border-radius:3px}
+.s.g{background:var(--okBg);color:var(--ok)}.s.a{background:var(--sugBg);color:var(--sug)}.s.b{background:var(--badBg);color:var(--bad)}.s.n{background:var(--well);color:var(--ink2)}
+.sec .row{display:flex;gap:8px;font-size:12px;padding:2px 0;color:var(--ink2);align-items:center}.sec .row b{font-weight:500;color:var(--ink)}.sec .row .r{margin-left:auto;font-family:var(--mono);font-size:11px}
+.job{display:flex;gap:8px;align-items:center;font-size:12px;padding:2px 0}.job .st{width:8px;height:8px;border-radius:4px;flex:none}
+.mact{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--line2);background:var(--paper);align-items:center;flex-wrap:wrap}
+.mact .n{font-size:11px;color:var(--mute);flex-basis:100%}
+
+.shell.planning{box-shadow:0 0 0 2px var(--sug)}.shell.editing{box-shadow:0 0 0 2px var(--sel)}
+.modelbl{font-size:11px;padding:1px 8px;border-radius:10px;margin-left:6px}.modelbl.p{background:var(--sugBg);color:var(--sug)}
+</style>
+</head>
+<body>
+<div class="page">
+<h1>The shell: one map, chosen by branch</h1>
+<p class="lead">No perspectives. A branch selector says what the map is about and is also the list of sessions, since a branch is where an agent works. The left pane is a drill-down: Agents (branches and sessions) first, then the selected branch's files with a dot on files an agent touches; the right pane shows code, the session's chat (sub-agents as tabs) or hunks, depending on what you last selected. Compare is a toggle that exists when a branch has a merge request.</p>
+<div class="steps" id="steps"></div>
+<div class="shell">
+  <div class="top"><span class="brand">arch</span><span style="color:var(--ink2)">orderly</span><span class="lbl">branch</span><div class="cur" id="cur"></div><div class="tog" id="tog"></div><div class="right"><span class="pill" id="ready">●●○○</span><span>Ask ⌘K</span></div></div>
+  <div class="strip" id="strip"></div>
+  <div class="body"><div class="left" id="left"></div><div class="map" id="map"></div><div class="right" id="right"></div></div>
+  <div class="status" id="status"></div>
+</div>
+<div class="note" id="note"></div>
+</div>
+<script>
+const STEPS=[
+ {k:'main',t:'1 · main',s:'The everyday map'},
+ {k:'plan',t:'2 · New change (focus)',s:'Intention · map · planner · accept'},
+ {k:'deleg',t:'3 · Delegated',s:'Branch, worktree, session'},
+ {k:'follow',t:'4 · Follow',s:'Session overlay, chat'},
+ {k:'answer',t:'5 · Answer',s:'A question from the agent'},
+ {k:'compare',t:'6 · Compare',s:'The MR view, hunks'},
+ {k:'merge',t:'7 · Merge',s:'Done · checks · merge to main'},
+ {k:'ask',t:'8 · Ask',s:'A question to the repo'}];
+let i=0;const S={filesOpen:false};const $=id=>document.getElementById(id);
+const dot=c=>`<span class="dot" style="background:${c}"></span>`;
+function dropdown(cur){return `<div class="dd"><h6>branch</h6><div class="i ${cur==='main'?'on':''}">${dot('var(--ok)')}<span class="m">main</span><span class="r">a1b2c3f · ●●○○</span></div>
+<div class="i ${cur==='ns'?'on':''}">${dot('var(--yk)')}<span class="m">feat/notify-ship</span><span>Yokohama · 4/7</span><span class="r">!482 · asks</span></div>
+<div class="i">${dot('var(--rl)')}<span class="m">fix/values-prod</span><span>Raleigh · 2/2</span><span class="r">no MR · done</span></div>
+<div class="i">${dot('var(--nb)')}<span class="m">feat/order-status</span><span>Nairobi · 1/5</span><span class="r">no MR</span></div>
+<h6>&nbsp;</h6><div class="i" style="color:var(--sel)">New branch from a plan…</div></div>`}
+function mapSvg(o={}){const yk='#6B5BD2',ykl='#B8AFEF';
+ const node=(x,y,w,l,st)=>{const f=st==='sel'?'#E3EEFB':st==='yk'?'#EEEBFB':st==='pl'?'#FBF2DE':'#F1EFE8';const s=st==='sel'?'#1F5FA8':st==='yk'?yk:st==='pl'?'#B87A0E':'#888780';const dash=st==='pl'?' stroke-dasharray="4 3"':'';const op=o.focus&&!['sel','yk','pl','lit'].includes(st)?' opacity=".35"':'';return `<g${op}><rect x="${x}" y="${y}" width="${w}" height="18" rx="3" fill="${f}" stroke="${s}"${dash} stroke-width="${st&&st!=='lit'?1.5:1}"/><text x="${x+5}" y="${y+12.5}" font-family="IBM Plex Mono" font-size="9.5" fill="${st==='sel'?'#0C447C':'#2C2C2A'}">${l}</text></g>`};
+ const s=o.st||{};
+ return `<svg viewBox="0 0 640 260" style="width:100%;height:auto;font-family:IBM Plex Sans,system-ui,sans-serif" role="img"><title>Map of orderly</title>
+<defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="context-stroke"/></marker></defs>
+<g font-size="9.5" fill="#5F5E5A">
+<rect x="6" y="6" width="150" height="248" rx="6" fill="none" stroke="#B4B2A9" stroke-dasharray="3 3"/><text x="12" y="20">api · driving</text>
+<rect x="166" y="6" width="150" height="248" rx="6" fill="none" stroke="#B4B2A9" stroke-dasharray="3 3"/><text x="172" y="20">domain</text>
+<rect x="326" y="6" width="150" height="248" rx="6" fill="none" stroke="#B4B2A9" stroke-dasharray="3 3"/><text x="332" y="20">clients · store · driven</text>
+<rect x="486" y="6" width="148" height="248" rx="6" fill="none" stroke="#B4B2A9" stroke-dasharray="3 3"/><text x="492" y="20">outbound</text></g>
+${node(14,32,134,'router · entry')}${node(14,62,134,'OrderService',s.svc)}${node(14,92,134,'ship()',s.ship)}
+${node(174,32,134,'Order')}${node(174,62,134,'Status')}${node(174,92,134,'OrderRepo · port',s.repo)}${node(174,122,134,'Payments · port')}${o.notifier?node(174,152,134,'Notifier · port',s.notif):''}
+${node(334,32,134,'PgOrderRepo',s.pg)}${node(334,62,134,'PaymentsHttp')}${o.notifier?node(334,152,134,'HttpNotifier',s.http):''}
+${node(494,32,130,'postgres · sqlx')}${node(494,62,130,'payments · http')}${node(494,152,130,'notifier · http')}
+<path d="M148,71 H172" fill="none" stroke="#888780" stroke-width="1.2" marker-end="url(#ar)"/>
+<path d="M148,71 H160 V101 H172" fill="none" stroke="#888780" stroke-width="1.2" marker-end="url(#ar)"/>
+<path d="M334,41 H320 V101 H308" fill="none" stroke="#888780" stroke-width="1.1" stroke-dasharray="3 3" marker-end="url(#ar)"/>
+<path d="M468,41 H492" fill="none" stroke="#2E7D5B" stroke-width="1.2" marker-end="url(#ar)"/>
+${o.notifier?`<path d="M148,101 H160 V161 H172" fill="none" stroke="${o.planned?'#B87A0E':yk}" stroke-width="1.6" ${o.planned?'stroke-dasharray="4 3"':''} marker-end="url(#ar)"/>
+<path d="M334,161 H308" fill="none" stroke="${o.planned?'#B87A0E':yk}" stroke-width="1.6" ${o.planned?'stroke-dasharray="4 3"':''} marker-end="url(#ar)"/>
+<path d="M468,161 H492" fill="none" stroke="${o.planned?'#B87A0E':yk}" stroke-width="1.4" ${o.planned?'stroke-dasharray="4 3"':''} marker-end="url(#ar)"/>`:''}
+${o.unplanned?`<path d="M148,96 H156 V22 H326 V36 H332" fill="none" stroke="#B23A33" stroke-width="2" marker-end="url(#ar)"/><rect x="180" y="238" width="150" height="14" rx="7" fill="#FBE7E5" stroke="#B23A33"/><text x="186" y="248" font-size="8.5" fill="#7A2620">ship() → PgOrderRepo · unplanned</text>`:''}
+${o.delta?`<rect x="6" y="238" width="118" height="14" rx="7" fill="#F1EFE8" stroke="#888780"/><text x="12" y="248" font-size="8.5" fill="#5F5E5A">untouched faded</text>`:''}
+</svg>`}
+function left(o){const ns=o.branch==='ns';
+ const files=ns?`<div class="back">‹ Agents <b>feat/notify-ship</b></div><div class="tr d">api/</div><div class="tr f ${o.file==='service'?'on':''}">service.rs ${dot('var(--yk)')}</div><div class="tr d">domain/</div><div class="tr f">order.rs</div><div class="tr f ${o.file==='ports'?'on':''}">ports.rs ${dot('var(--yk)')}</div><div class="tr d">clients/</div><div class="tr f">notify_http.rs ${dot('var(--yk)')}</div><div class="tr d">store/</div><div class="tr f">pg.rs</div><div class="tr d">tests/</div><div class="tr f">lifecycle.rs</div><div class="tr d" style="margin-top:6px">Cargo.toml</div><div class="tr dim" style="margin-top:10px;font-size:11px">${dot('var(--yk)')} touched by Yokohama</div>`
+ :`<div class="back">‹ Agents <b>main</b></div><div class="tr d">api/</div><div class="tr f">service.rs</div><div class="tr d">domain/</div><div class="tr f">order.rs</div><div class="tr f ${o.file==='ports'?'on':''}">ports.rs</div><div class="tr d">clients/</div><div class="tr f">payments_http.rs</div><div class="tr d">store/</div><div class="tr f">pg.rs</div><div class="tr d">tests/</div><div class="tr f">lifecycle.rs</div><div class="tr d" style="margin-top:6px">Cargo.toml</div>`;
+ const changes=`<div class="back">‹ Agents <b>changes vs main</b></div><div class="tr d">domain</div><div class="tr f">Notifier <span class="bd g">+ port</span></div><div class="tr d">api</div><div class="tr f ${o.file==='service'?'on':''}">ship() <span class="bd b">finding</span></div><div class="tr f">OrderService <span class="bd">+ field</span></div><div class="tr d">clients</div><div class="tr f">HttpNotifier <span class="bd g">+ adapter</span></div><div class="tr d">store</div><div class="tr f">MemOrderRepo <span class="bd b">− removed</span></div>`;
+ const agents=`<h6>agents<span>orderly</span></h6>
+ <div class="agr b1 ${ns?'on':''}"><span style="color:var(--mute)">▾</span>${dot('var(--yk)')}<span class="m">feat/notify-ship</span><span class="st ${o.asks?'a':''}">${o.asks?'asks':'4/7'}</span></div>
+ <div class="agr b2">${dot('var(--yk)')}Yokohama<span class="m" style="margin-left:4px">claude-code</span><span class="st">!482</span></div>
+ <div class="agr b3">${dot('#534AB7')}port + adapter<span class="st g">done</span></div>
+ <div class="agr b3 ${o.sub==='s2'?'on':''}">${dot('#AFA9EC')}wire ship()<span class="st ${o.asks?'a':''}">${o.asks?'asks':'running'}</span></div>
+ <div class="agr b3">${dot('#CECBF6')}tests<span class="st">todo</span></div>
+ <div class="agr b1"><span style="color:var(--mute)">▸</span>${dot('var(--rl)')}<span class="m">fix/values-prod</span><span class="st g">2/2</span></div>
+ <div class="agr b2 dim">${dot('var(--rl)')}Raleigh<span class="m" style="margin-left:4px">claude-code</span><span class="st">no MR</span></div>
+ <div class="agr b1"><span style="color:var(--mute)">▸</span>${dot('var(--nb)')}<span class="m">feat/order-status</span><span class="st">1/5</span></div>
+ <div class="agr b1 ${!ns&&o.mainOn?'on':''}"><span style="color:var(--mute)">·</span>${dot('var(--ok)')}<span class="m">main</span><span class="st">no session</span></div>
+ <div class="tr dim" style="margin-top:10px;font-size:11px">select a branch or session to open its files ›</div>`;
+ if(o.compare)return changes;
+ return o.view==='files'?files:agents}
+function planPane(){return `<div class="hd"><b>Plan</b><span>on main · not yet a branch</span><span class="r">6 elements · 0 violations</span></div><div class="planp"><div class="doc"><h4>Notify the customer when an order ships, via the notifier service.</h4>
+<div class="el"><span class="k">port</span><span class="m">domain::Notifier</span><span class="s">amber</span><span class="x">✕</span></div>
+<div class="el"><span class="k">adapter</span><span class="m">clients::HttpNotifier</span><span class="s">amber</span><span class="x">✕</span></div>
+<div class="el"><span class="k">link</span><span class="m">OrderService → Notifier</span><span class="s">amber</span><span class="x">✕</span></div>
+<div class="el"><span class="k">contract</span><span class="m">notifier OpenAPI v1</span><span class="s">exists</span><span class="x">✕</span></div>
+<div class="el"><span class="k">test</span><span class="m">ship_emits_event · spy notifier</span><span class="s ed">edited</span><span class="x">✕</span></div>
+<div class="el"><span class="k">config</span><span class="m">NOTIFY_URL · retries: 3</span><span class="s ed">from chat</span><span class="x">✕</span></div>
+<div style="font-size:10.5px;color:var(--mute);margin-top:6px">click an element to edit it · drag it on the map to move it · ✕ drops it</div></div>
+<div class="th"><div class="msg ag"><div class="who">planner</div>Two questions before you accept. Should a failed notification block the shipment, or be retried in the background?</div><div class="msg me">Background, retry 3 times, then log.</div><div class="msg ag"><div class="who">planner</div>Added a retry policy to the config element and a test for the failure path. The link stays after save() so a notifier outage can't roll back the shipment.<div class="tool">▸ arch.check plan → 0 violations</div></div></div>
+<div class="cin"><input placeholder="Refine the plan…"><button class="sm">Send</button></div>
+<div class="act"><button class="sm primary" id="go">Accept</button><button class="sm quiet">Discard</button><span class="n">accepting creates the branch and starts the agent</span></div></div>`}
+function codePane(o){return `<div class="hd"><b>${o.file}</b><span>${o.area}</span><span class="r">preview · double-click opens a tab</span></div><div class="code">${o.lines}</div>`}
+function chatPane(o){const tabs=[['all','Yokohama'],['s1','port + adapter'],['s2','wire ship()'],['s3','tests']].map(([id,l])=>`<span style="padding:2px 8px;border-radius:4px;${(o.tab||'all')===id?'background:var(--paper);color:var(--ink);font-weight:500;border:1px solid var(--line2)':'color:var(--ink2)'}">${l}</span>`).join('');return `<div class="hd" style="flex-wrap:wrap;gap:6px"><b>Yokohama</b><span>claude-code · ${o.prog||'4/7'}</span><span class="r">stop · archive</span><div style="flex-basis:100%;display:flex;gap:4px;font-size:11.5px;background:var(--well);border-radius:6px;padding:2px">${tabs}</div></div><div class="chat"><div class="msgs">${o.msgs}</div><div class="cin"><input placeholder="Reply to Yokohama…"><button class="sm primary">Send</button></div></div>`}
+function render(){
+ $('steps').innerHTML=STEPS.map((s,j)=>`<button class="step ${j===i?'on':''}" data-j="${j}"><b>${s.t}</b><span>${s.s}</span></button>`).join('');
+ $('steps').querySelectorAll('.step').forEach(b=>b.onclick=()=>{i=+b.dataset.j;render()});
+ const k=STEPS[i].k;const ns=!['main','plan','ask'].includes(k);
+ document.querySelector('.shell').classList.remove('focus','planning','editing');$('strip').style.display='';$('left').classList.remove('open');
+ $('cur').innerHTML=(ns?'feat/notify-ship':'main')+' <span style="color:var(--mute)">▾</span>'+(k==='deleg'?dropdown('ns'):'');
+ $('tog').innerHTML=`<span class="${k==='compare'?'':'on'}">Map</span><span class="${k==='compare'?'on':(ns?'':'off')}">Compare${ns?' · !482':''}</span>`;
+ if(k==='main'){
+  $('strip').innerHTML=`<span>main · a1b2c3f · nothing to decide</span><div class="r"><button class="sm newbtn" id="go">＋ New change</button></div>`;$('go').onclick=()=>{i=1;render()};
+  $('left').innerHTML=left({branch:'main',view:'files',file:'ports'});
+  $('map').innerHTML=mapSvg({st:{repo:'sel'},focus:true});
+  $('right').innerHTML=codePane({file:'ports.rs',area:'domain',lines:`<div class="ln lens"><span class="n"></span><span class="t"><a>2 callers</a><a>2 impls</a><a>reach ▸</a><a>ask</a></span></div><div class="ln"><span class="n">3</span><span class="t">/// Port for order persistence.</span></div><div class="ln hl"><span class="n">4</span><span class="t"><span class="k">pub trait</span> OrderRepo: Send + Sync {<span class="hint ok">port</span></span></div><div class="ln"><span class="n">5</span><span class="t">    <span class="k">async fn</span> get(&amp;self, id: OrderId) -&gt; Result&lt;Option&lt;Order&gt;, StoreError&gt;;</span></div><div class="ln"><span class="n">6</span><span class="t">    <span class="k">async fn</span> save(&amp;self, o: &amp;Order) -&gt; Result&lt;(), StoreError&gt;;</span></div><div class="ln"><span class="n">7</span><span class="t">}</span></div>`});
+  $('status').innerHTML=`<span>Findings 0</span><span class="r">Map up to date · 2 s ago</span>`;
+  $('note').innerHTML=`<b>1 · main.</b> The everyday screen; ＋ New change is the one primary button, in the strip. OrderRepo is selected: its callers and impl are lit on the map, the code pane shows it with lenses. The left pane starts on Agents (branches and their sessions); selecting one drills into its files, and ‹ Agents goes back up. Here main's files are open.`;
+ }
+ if(k==='plan'){
+  document.querySelector('.shell').classList.add('focus','planning');
+  $('strip').innerHTML='';$('strip').style.display='none';
+  $('cur').innerHTML='main <span class="modelbl p">planning</span>';$('tog').innerHTML=`<span style="color:var(--mute)">focus · Esc to leave</span>`;
+  const L=$('left');L.classList.toggle('open',!!S.filesOpen);L.innerHTML=S.filesOpen?`<div class="rail">‹ Files <span style="color:var(--mute);font-weight:400">main</span></div><div class="tr d">api/</div><div class="tr f">service.rs</div><div class="tr d">domain/</div><div class="tr f">order.rs</div><div class="tr f">ports.rs <span class="hint pl">+ Notifier</span></div><div class="tr d">clients/</div><div class="tr f">payments_http.rs</div><div class="tr f dim">notify_http.rs <span class="hint pl">planned</span></div><div class="tr d">store/</div><div class="tr f">pg.rs</div><div class="tr d">tests/</div><div class="tr f">lifecycle.rs</div><div class="tr f dim">notify.rs <span class="hint pl">planned</span></div>`:`<div class="rail">Files ›</div>`;L.querySelector('.rail').onclick=()=>{S.filesOpen=!S.filesOpen;render()};
+  $('map').innerHTML=`<div class="intent"><span class="m">Change</span><input value="Notify the customer when an order ships, via the notifier service."><span class="m">6 elements · 0 violations · 2 from the thread</span></div>`+mapSvg({notifier:true,planned:true,st:{notif:'pl',http:'pl'}})+`<div style="display:flex;gap:14px;font-size:11.5px;color:var(--ink2);padding:6px 12px">amber = planned · click an element to rename · drag to move · ✕ to drop · ＋ on a column to add · hover shows kind, contract, test</div>`;
+  $('right').innerHTML=`<div class="hd"><b>Planner</b><span>asks, then applies to the map</span></div><div class="planp"><div class="th"><div class="msg ag"><div class="who">planner</div>Drafted 4 elements from your change and the map: a port in domain, an adapter in clients, the link from OrderService, and the existing notifier contract.<div class="chg">changed · 4 elements drawn</div></div><div class="msg ag"><div class="who">planner</div>Should a failed notification block the shipment, or be retried in the background?</div><div class="msg me">Background, retry 3 times, then log.</div><div class="msg ag"><div class="who">planner</div>Added a retry policy to the NOTIFY_URL config and a test for the failure path. The link stays after save() so a notifier outage can't roll back the shipment.<div class="chg">changed · config NOTIFY_URL, test ship_notify_fails</div><div class="tool">▸ arch.check plan → 0 violations</div></div></div><div class="cin"><input placeholder="Refine…"><button class="sm">Send</button></div><div class="act"><button class="sm primary" id="go">Accept</button><button class="sm quiet">Discard</button><span class="n">branch · worktree · session</span></div></div>`;
+  $('go').onclick=()=>{i=2;render()};
+  $('status').innerHTML=`<span>plan · 6 elements</span><span class="r">Accept lands you in Follow</span>`;
+  $('note').innerHTML=`<b>2 · Plan, as a focus.</b> Entered from ＋ New change. Full window with an amber frame and a "planning" label in the top bar, so the mode is visible from any distance. Three things: the intention (editable at the top), the map (large; planned elements are edited on the map itself, no side list), and the planner thread (right). A collapsed Files rail on the left opens the directory on demand, with planned files shown dimmed and tagged, and folds back with ‹. Every answer produces a visible "changed" line so the chat and the map can't disagree. Two pinned exits.`;
+  return;
+ }
+ if(k==='deleg'){
+  $('strip').innerHTML=`<span style="color:var(--ink)">Delegated. Branch feat/notify-ship, worktree created, session Yokohama started with the plan and the rules.</span>`;
+  $('left').innerHTML=left({branch:'ns'});
+  $('map').innerHTML=mapSvg({notifier:true,planned:true,st:{notif:'pl',http:'pl'}});
+  $('right').innerHTML=chatPane({prog:'0/7',msgs:`<div class="msg ag"><div class="who">Yokohama · claude-code</div>Starting from the plan: 6 elements. I'll do the port and adapter first, then wire ship(), then tests.<div class="tool">▸ arch.map · arch.why Notifier</div></div>`});
+  $('status').innerHTML=`<span>Findings 0</span><span>Yokohama · 0/7 · running</span><span class="r">worktree ../orderly-notify-ship</span>`;
+  $('note').innerHTML=`<b>3 · Delegate.</b> Delegating creates the branch, and the selector switches to it (dropdown shown open). From now on this branch is where its agent lives: the right pane is its chat, with sub-agents as tabs; the left pane is back at the Agents level, showing where the new session sits; the map is this branch's map, still all amber.`;
+ }
+ if(k==='follow'){
+  $('strip').innerHTML=`<span style="color:var(--ink)">Yokohama · 4 of 7 elements realized · working on wire ship()</span><div class="r"><button class="sm">Stop</button></div>`;
+  $('left').innerHTML=left({branch:'ns',view:'files'});
+  $('map').innerHTML=mapSvg({notifier:true,st:{notif:'yk',http:'yk',svc:'yk'}});
+  $('right').innerHTML=chatPane({tab:'all',msgs:`<div class="msg ag"><div class="who">Yokohama · port + adapter</div>Port Notifier and adapter HttpNotifier placed and wired to the notifier service. Contract test green.<div class="tool">▸ arch.check --diff → 0 findings</div></div><div class="msg ag"><div class="who">Yokohama · wire ship()</div>Adding the notifier call in ship() after save.<div class="tool">▸ arch.why OrderRepo::save</div></div>`});
+  $('status').innerHTML=`<span>Findings 0</span><span>Yokohama · 4/7 · running</span><span class="r">Map up to date</span>`;
+  $('note').innerHTML=`<b>4 · Follow.</b> Realized elements turned from amber to the session's colour. The chat shows the whole session; the tabs narrow it to one sub-agent's thread. Selecting a file would show code instead. One right pane, one thing.`;
+ }
+ if(k==='answer'){
+  $('strip').innerHTML=`<span style="color:var(--ink)">Yokohama needs a decision · 1 unplanned dependency</span><div class="r"><button class="sm">Stop</button></div>`;
+  $('left').innerHTML=left({branch:'ns',asks:true,sub:'s2'});
+  $('map').innerHTML=mapSvg({notifier:true,unplanned:true,st:{notif:'yk',http:'yk',svc:'yk',ship:'sel',pg:'lit'}});
+  $('right').innerHTML=chatPane({tab:'s2',msgs:`<div class="msg ag"><div class="who">Yokohama · wire ship()</div>To save after shipping I called PgOrderRepo directly from ship(). That adds api → store, which the plan doesn't have and the rule forbids.<div class="tool">▸ arch.check --diff → 1 finding</div></div><div class="q"><b style="font-weight:600">Which way?</b><div class="opts"><button>A · route through OrderRepo, the planned shape (+1 async call)</button><button>B · add the link to the plan and allow it here, with a reason</button><button>C · stop, I'll look</button></div></div>`});
+  $('status').innerHTML=`<span style="color:var(--bad)">Findings 1</span><span>Yokohama · 4/7 · asks</span><span class="r">Map up to date</span>`;
+  $('note').innerHTML=`<b>5 · Answer.</b> The deviation is drawn where it happened (red on the map) and asked where you answer (the chat), with the options the agent sees. The selector's badge said "asks" before you came here; that badge is the whole inbox. The tab "wire ship()" is active because the question came from that sub-agent, and the Agents level of the left pane highlights the same node.`;
+ }
+ if(k==='compare'){
+  $('strip').innerHTML=`<span style="color:var(--ink)">!482 · notify on shipment · vs main · adds Notifier port and adapter as planned, changes ship() contract to v3, reaches store from api at one site.</span><div class="r"><button class="sm">Request change</button><button class="sm primary">Approve</button></div>`;
+  $('left').innerHTML=left({branch:'ns',compare:true,file:'service'});
+  $('map').innerHTML=mapSvg({notifier:true,unplanned:true,delta:true,focus:true,st:{notif:'yk',http:'yk',svc:'yk',ship:'sel',pg:'lit',repo:'lit'}});
+  $('right').innerHTML=`<div class="hd"><b>ship()</b><span>api · service.rs · 3 hunks</span><span class="r">j k next · v viewed</span></div><div class="hk"><div class="hh">@@ 10,8 signature<span class="sg c">~ orders.proto v3</span></div><div class="l d">- ) -&gt; Result&lt;Response&lt;()&gt;, Status&gt;</div><div class="l a">+ ) -&gt; Result&lt;Response&lt;ShipReply&gt;, Status&gt;</div></div><div class="hk"><div class="hh">@@ 15,1<span class="sg">api → store</span></div><div class="l d">- self.repo.save(&amp;order).await?;</div><div class="l a">+ self.store.pg.save(&amp;order).await?;</div></div><div class="fix"><b>fix · verified</b> route through the port OrderRepo<div class="a"><button class="sm">Commit to MR</button><button class="sm">Comment</button><button class="sm">Allow…</button></div></div><div class="hk"><div class="hh">@@ 16,1<span class="sg g">+ Notifier · planned</span></div><div class="l a">+ self.notifier.shipped(ev).await?;</div></div><div class="vw"><input type="checkbox"> viewed</div>`;
+  $('status').innerHTML=`<span style="color:var(--bad)">Findings 1 new</span><span>3/9 read · 14 pre-existing hidden</span><span class="r">CI artifact #4821</span>`;
+  $('note').innerHTML=`<b>6 · Compare.</b> Always the branch against main (the repo's default branch), never a worktree against another. The toggle, not a place. Files becomes the change list grouped by area; the map fades untouched items and draws the delta; the right pane shows the selected item's hunks with the verified fix. Approve and request change sit in the strip. Off again, everything returns.`;
+ }
+ if(k==='merge'){
+  $('strip').innerHTML=`<span style="color:var(--ink)">Yokohama finished · 7/7 elements · branch is ready for the merge checks</span><div class="r"><button class="sm">Reopen session</button></div>`;
+  $('left').innerHTML=left({branch:'ns',view:'files'});
+  $('map').innerHTML=mapSvg({notifier:true,delta:true,focus:true,st:{notif:'yk',http:'yk',svc:'yk',ship:'lit',repo:'lit',pg:'lit'}});
+  $('right').innerHTML=`<div class="hd"><b>Merge to main</b><span>feat/notify-ship · !482</span><span class="r">vs main · a1b2c3f</span></div><div class="mg">
+   <div class="sec"><h5>Plan<span class="s g">7/7 realized</span></h5><div class="row">1 deviation, fixed in the session<span class="r"><a style="color:var(--sel)">details ▸</a></span></div></div>
+   <div class="sec"><h5>Findings<span class="s g">0 new · 1 fixed</span></h5></div>
+   <div class="sec"><h5>Pipeline #4821<span class="s a">3 of 4 green · integration running</span></h5><div class="row"><span style="color:var(--mute)">from GitLab</span><span class="r"><a style="color:var(--sel)">jobs ▸</a></span></div></div>
+   <div class="sec"><h5>Review<span class="s a">1 approval needed</span></h5><div class="row">@orderly/core requested · you read 9/9</div></div>
+   <div class="sec"><h5>Merge<span class="s n">squash · delete branch</span></h5></div>
+  </div><div class="mact"><button class="sm primary" disabled style="opacity:.5">Merge to main</button><button class="sm">Open in GitLab</button><button class="sm quiet">Ask for changes</button><span class="n">enabled when the pipeline is green and the review approves · the session archives on merge, the plan dissolves</span></div>`;
+  $('status').innerHTML=`<span>Findings 0 new</span><span>pipeline running · 1 approval needed</span><span class="r">CI artifact #4821</span>`;
+  $('note').innerHTML=`<b>7 · Merge.</b> The end of a change. Left: the branch's files, as everywhere. Right: the simplified checklist, one line per check (plan, findings, pipeline from GitLab shown not run, review, merge options), details behind a ▸. The map shows the delta vs main. One button, disabled until the checks say yes; on merge the session archives and the plan dissolves.`;
+ }
+ if(k==='ask'){
+  $('strip').innerHTML=`<span>main · a1b2c3f</span>`;
+  $('left').innerHTML=left({branch:'main',view:'files'});
+  $('map').innerHTML=mapSvg({st:{ship:'lit',svc:'lit',repo:'lit',pg:'lit'},focus:true});
+  $('right').innerHTML=`<div class="hd"><b>Ask</b><span>about main</span><span class="r">Esc closes</span></div><div class="ask"><div class="qq">where does a shipment get persisted, and through what?</div><div class="ran">ran &nbsp;entry<br>ran &nbsp;path ship() → postgres<br>ran &nbsp;why OrderRepo::save</div><div class="ans">Through the port <span class="chip">OrderRepo</span>, implemented by <span class="chip">PgOrderRepo</span>, called from <span class="chip">ship()</span> after the domain transition. No path bypasses the port on main.<div class="wit"><span>service.rs:14</span><span>ports.rs:6</span><span>pg.rs:14</span><span style="color:var(--sel);border-color:var(--sel)">open all</span></div></div><div class="cin" style="border:none;padding:0"><input placeholder="Ask about main, or about ship()…"><button class="sm primary">Ask</button></div></div>`;
+  $('status').innerHTML=`<span>Findings 0</span><span class="r">Map up to date</span>`;
+  $('note').innerHTML=`<b>7 · Ask.</b> ⌘K anywhere. Ask replaces the right pane for the duration; the map focuses the items in the answer; every chip and witness is a click. Queries run are always shown above the answer.`;
+ }
+}
+render();
+</script>
+</body>
+</html>

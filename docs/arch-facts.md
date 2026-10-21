@@ -4,7 +4,7 @@ The fact model, the store and the `.arch/` formats. Depends on nothing else of o
 
 ## `schemas/facts.schema.json`
 
-The contract between `arch-analyze` (producer), `arch-fixtures` (golden files, reviewed there
+The contract between `arch-analyze` (producer), `fixtures/golden/` (golden files, reviewed here
 first) and `arch-views` (reader). It is **generated from the Rust types** in
 `crates/arch-facts/src/model.rs`; the committed file is the published artifact and CI fails when it
 drifts (`cargo test -p arch-facts`). Regenerate with:
@@ -14,7 +14,7 @@ ARCH_UPDATE_SCHEMA=1 cargo test -p arch-facts
 ```
 
 `schemas/examples/*.json` must validate against the schema and round-trip through the types
-byte for byte; they are the smallest examples arch-fixtures can start from.
+byte for byte; they are the smallest examples the fixtures can start from.
 
 ### Versioning
 
@@ -113,15 +113,16 @@ flowchart LR
 | `cache/tool-layer/<element>.json` | `ToolLayerState` | gitignored; JSON: `session · element · expected[{path, sha256}] · read{path: sha256} · writes[{path, sha256, at}]`. arch-driver's hooks and MCP `read` write it under a lock (`ToolLayerFile::update`); the watcher reads `expected` (ADR 0012, arch-design#34) |
 | `refs/notes/arch` | `Archive` | at merge, `Archive::move_to_notes` writes the folder as one TOML note and removes it from the tree |
 
-## The arch-fixtures pin
+## The fixtures
 
-`fixtures/pin.toml` names the arch-fixtures commit; `scripts/fetch-fixtures.sh` clones it into
-`fixtures/arch-fixtures/` (gitignored), in CI and locally. `tests/golden.rs` then requires the clone,
-reads every `golden/<repo>/sizes.json`, round-trips every `facts.json` present and checks its counts
-against `sizes.json`, and parses `repos/smallsvc/.arch/` with the readers above. Bump the pin
-deliberately: a golden change is a reviewed PR in arch-fixtures first (handoff §5).
+`fixtures/` holds the pinned real repos (`repos/`, submodules and the in-tree smallsvc), the golden
+facts (`golden/<repo>/`) and the invariant harness (`checks/`). `tests/golden.rs` reads every
+`golden/<repo>/sizes.json`, round-trips every `facts.json` present and checks its counts against
+`sizes.json`, and parses `repos/smallsvc/.arch/` with the readers above. A golden change is reviewed
+in the same PR as the engine change that moves it; `fixtures/checks/tests/golden.rs` keeps
+`repo.commit` honest.
 
-## Open questions filed in arch-design (`from:arch`)
+## Open questions filed as `from:arch` issues
 
 Where an ADR leaves a wire detail open, the code carries the simplest reading and the question is
 filed; the product chat decides, then the code follows.

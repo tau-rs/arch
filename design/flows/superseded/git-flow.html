@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>arch · git</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#F3F5F6;--paper:#FFFFFF;--well:#E9EDEF;--ink:#17242B;--ink2:#4A5B64;--mute:#8A9AA3;--line:#CBD4D9;--line2:#E1E7EA;
+--sel:#1F5FA8;--selBg:#E3EEFB;--sug:#B87A0E;--sugBg:#FBF2DE;--ok:#2E7D5B;--okBg:#E3F2EA;--bad:#B23A33;--badBg:#FBE7E5;--yk:#6B5BD2;--ykBg:#EEEBFB;--rl:#1D9E75;--nb:#D9891B;
+--sans:'IBM Plex Sans',system-ui,sans-serif;--mono:'IBM Plex Mono',ui-monospace,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141B1F;--paper:#1B2429;--well:#22303A;--ink:#E6EDF0;--ink2:#B3C0C7;--mute:#7C8C95;--line:#33434C;--line2:#28353D;--selBg:#1E3350;--sugBg:#3D3116;--okBg:#1D3A2E;--badBg:#45231F;--ykBg:#2C2748}}
+:root[data-theme="dark"]{--bg:#141B1F;--paper:#1B2429;--well:#22303A;--ink:#E6EDF0;--ink2:#B3C0C7;--mute:#7C8C95;--line:#33434C;--line2:#28353D;--selBg:#1E3350;--sugBg:#3D3116;--okBg:#1D3A2E;--badBg:#45231F;--ykBg:#2C2748}
+html,body{margin:0;height:100%}body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:5px 11px;cursor:pointer}
+button:hover{background:var(--well)}button.primary{background:var(--sel);color:#fff;border-color:var(--sel)}button.quiet{border-color:transparent;background:transparent;color:var(--ink2)}button.sm{font-size:12px;padding:3px 9px}
+.page{max-width:1360px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:22px;font-weight:600;margin:0 0 4px}.lead{color:var(--ink2);max-width:76ch;margin:0 0 20px}
+.steps{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;margin-bottom:16px}
+.step{text-align:left;padding:8px 10px;border-radius:6px;border:1px solid var(--line);background:var(--paper)}.step b{display:block;font-weight:600;font-size:13px}.step span{color:var(--ink2);font-size:12px}
+.step.on{border-color:var(--sel);box-shadow:inset 0 0 0 1px var(--sel)}
+.shell{background:var(--paper);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.top{display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid var(--line2);font-size:13px}
+.top .brand{font-weight:600}.top .lbl{color:var(--mute)}
+.cur{display:flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid var(--line);border-radius:5px;background:var(--paper);font-family:var(--mono);font-size:12.5px;cursor:pointer;position:relative}
+.dd{position:absolute;top:30px;left:0;width:330px;background:var(--paper);border:1px solid var(--line);border-radius:6px;box-shadow:0 10px 28px rgba(0,0,0,.14);font-family:var(--sans);font-size:12.5px;z-index:3;text-align:left}
+.dd h6{margin:0;padding:8px 12px 2px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);font-weight:500}
+.dd .i{display:flex;gap:8px;align-items:center;padding:6px 12px;cursor:pointer}.dd .i:hover{background:var(--well)}.dd .i.on{background:var(--selBg)}
+.dd .m{font-family:var(--mono)}.dd .r{margin-left:auto;color:var(--ink2);font-size:11.5px;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:4px;display:inline-block;flex:none}
+.tog{display:flex;gap:2px;background:var(--well);border-radius:6px;padding:2px}.tog span{padding:3px 10px;border-radius:4px;color:var(--ink2);cursor:pointer}.tog span.on{background:var(--paper);color:var(--ink);font-weight:500}.tog span.off{opacity:.4;cursor:default}
+.top .right{margin-left:auto;display:flex;gap:10px;align-items:center;color:var(--ink2)}
+.pill{font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:10px;padding:1px 8px}
+.strip{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--line2);font-size:13px;color:var(--ink2);min-height:42px}
+.strip.amber{background:var(--sugBg);color:var(--ink)}.strip.yk{background:var(--ykBg);color:var(--ink)}.strip .r{margin-left:auto;display:flex;gap:6px}
+.body{display:grid;grid-template-columns:210px minmax(0,1fr) 330px;height:540px}
+.left{overflow:auto}.right{overflow:hidden}
+.left{border-right:1px solid var(--line2);padding:10px 8px;font-size:12.5px;overflow:hidden}
+.left h6{margin:0 0 4px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);font-weight:500;display:flex}.left h6 span{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400}
+.tr{padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:4px;display:flex;align-items:center;gap:6px}
+.tr.d{color:var(--ink);font-weight:500}.tr.f{padding-left:20px;color:var(--ink2)}.tr.on{background:var(--selBg);color:var(--sel)}.tr.dim{opacity:.5}
+.tr .m{font-family:var(--mono);font-size:11.5px;color:var(--mute);margin-left:auto}
+.tr .bd{font-size:10px;padding:0 5px;border-radius:3px;background:var(--well);color:var(--ink2);margin-left:auto}.bd.b{background:var(--badBg);color:var(--bad)}.bd.a{background:var(--sugBg);color:var(--sug)}.bd.g{background:var(--okBg);color:var(--ok)}
+.l1{padding-left:20px}.l2{padding-left:34px}
+.sep{border-top:1px solid var(--line2);margin:10px 0 8px}
+.map{padding:12px;position:relative}
+.right{border-left:1px solid var(--line2);display:flex;flex-direction:column;min-height:0;font-size:12.5px}
+.right .hd{padding:8px 12px;border-bottom:1px solid var(--line2);display:flex;gap:8px;align-items:baseline;color:var(--mute);font-size:11.5px}.right .hd b{font-family:var(--mono);color:var(--ink);font-weight:500;font-size:13px}.right .hd .r{margin-left:auto}
+.code{font-family:var(--mono);font-size:11.5px;line-height:1.65;padding:6px 0}
+.ln{display:flex;white-space:nowrap;overflow:hidden;padding:0 10px}.ln .n{width:22px;text-align:right;color:var(--mute);margin-right:10px;flex:none}.ln .t{color:var(--ink2)}.ln.hl{background:var(--selBg)}.ln.hl .t{color:var(--ink)}.ln.add{background:var(--okBg)}.ln.del{background:var(--badBg)}.ln.lens .t{font-family:var(--sans);font-size:10.5px;color:var(--mute)}.ln.lens a{margin-right:10px;color:var(--ink2)}.ln.lens a.w{color:var(--bad)}.ln .k{color:var(--sel)}
+.hint{font-family:var(--sans);font-size:10px;padding:0 5px;border-radius:3px;margin-left:8px;background:var(--well);color:var(--mute)}.hint.ok{background:var(--okBg);color:var(--ok)}.hint.pl{background:var(--sugBg);color:var(--sug)}
+.chat{display:flex;flex-direction:column;flex:1;min-height:0}
+.msgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.msg{padding:7px 10px;border-radius:8px;background:var(--well);line-height:1.45;max-width:94%}.msg.ag{background:var(--ykBg)}.msg.me{background:var(--selBg);align-self:flex-end}.msg .who{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--mute);margin-bottom:2px}.msg .tool{font-family:var(--mono);font-size:11px;color:var(--ink2);margin-top:4px}
+.q{border:1px dashed var(--sug);background:var(--sugBg);border-radius:8px;padding:8px 10px;line-height:1.45}.q .opts{display:flex;flex-direction:column;gap:4px;margin-top:6px}.q button{text-align:left;font-size:12px;padding:3px 8px}
+.cin{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--line2)}.cin input{flex:1;font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink)}
+.hk{margin:6px 10px;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:11px}.hk .hh{background:var(--well);padding:3px 8px;color:var(--ink2);display:flex;gap:8px;font-family:var(--sans)}.hk .hh .sg{margin-left:auto;font-size:10px;padding:0 5px;border-radius:3px;background:var(--badBg);color:var(--bad)}.hk .hh .sg.g{background:var(--okBg);color:var(--ok)}.hk .hh .sg.c{background:var(--selBg);color:var(--sel)}.hk .l{padding:0 8px;white-space:pre}.hk .l.a{background:var(--okBg)}.hk .l.d{background:var(--badBg)}
+.fix{margin:0 10px 8px;border:1px dashed var(--sel);border-radius:6px;padding:6px 8px;font-size:11.5px}.fix b{color:var(--sel);font-weight:500}.fix .a{display:flex;gap:4px;margin-top:5px}
+.vw{display:flex;justify-content:flex-end;padding:6px 12px;font-size:11.5px;color:var(--ink2);gap:6px;align-items:center}
+.ask{padding:10px 12px;display:flex;flex-direction:column;gap:8px}.ask .qq{background:var(--selBg);border-radius:8px;padding:7px 10px;align-self:flex-end}.ask .ran{font-family:var(--mono);font-size:11px;color:var(--ink2);background:var(--well);border-radius:6px;padding:6px 8px;line-height:1.7}.ask .ans{background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 10px;line-height:1.5}.ask .chip{font-family:var(--mono);font-size:11px;border:1px solid var(--sel);color:var(--sel);border-radius:4px;padding:0 4px}.ask .wit{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-family:var(--mono);font-size:11px}.ask .wit span{border:1px solid var(--line);border-radius:4px;padding:1px 6px;color:var(--ink2)}
+.status{display:flex;gap:16px;padding:7px 14px;border-top:1px solid var(--line2);font-size:12px;color:var(--ink2)}.status .r{margin-left:auto}
+.note{margin-top:16px;padding:14px 16px;border-left:3px solid var(--sel);background:var(--paper);border-radius:0 6px 6px 0;font-size:13.5px;max-width:80ch}.note b{font-weight:600}
+.plan{position:absolute;right:12px;top:12px;width:250px;background:var(--paper);border:1px solid var(--sug);border-radius:8px;padding:10px 12px;font-size:12px}
+.plan h4{margin:0 0 6px;font-size:12.5px;font-weight:600}.plan .el{display:flex;gap:6px;padding:3px 0;border-top:1px solid var(--line2);align-items:center}.plan .el .k{font-size:10px;color:var(--mute);width:48px}.plan .el .m{font-family:var(--mono);font-size:11.5px}.plan .el .s{margin-left:auto;font-size:10px;color:var(--sug)}
+.plan textarea{width:100%;height:44px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:6px;resize:none;margin-bottom:6px;background:var(--paper);color:var(--ink)}
+
+.psw{display:flex;gap:2px;background:var(--well);border-radius:6px;padding:2px;margin:0 0 8px;font-size:12px}
+.psw span{flex:1;text-align:center;padding:2px 0;border-radius:4px;color:var(--ink2);cursor:pointer}.psw span.on{background:var(--paper);color:var(--ink);font-weight:500}
+.agr{padding:2px 6px;border-radius:4px;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden}
+.agr.on{background:var(--selBg)}.agr .m{font-family:var(--mono);font-size:11.5px;color:var(--ink2)}.agr .st{margin-left:auto;font-size:10px;padding:0 5px;border-radius:3px;background:var(--well);color:var(--ink2)}
+.agr .st.a{background:var(--sugBg);color:var(--sug)}.agr .st.g{background:var(--okBg);color:var(--ok)}
+.agr.b1{padding-left:18px}.agr.b2{padding-left:32px}.agr.b3{padding-left:46px}
+.agr.dim{opacity:.55}
+
+.back{display:flex;align-items:center;gap:6px;padding:4px 6px;margin-bottom:6px;font-size:12px;color:var(--ink2);cursor:pointer;border-bottom:1px solid var(--line2)}
+.back b{font-family:var(--mono);font-weight:500;color:var(--ink);font-size:12px}
+.planp{display:flex;flex-direction:column;flex:1;min-height:0}
+.planp .doc{padding:10px 12px;border-bottom:1px solid var(--line2)}
+.planp .doc h4{margin:0 0 6px;font-size:13px;font-weight:600}
+.planp .el{display:flex;gap:6px;padding:4px 0;border-top:1px solid var(--line2);align-items:center;font-size:12px}
+.planp .el .k{font-size:10px;color:var(--mute);width:48px;flex:none}.planp .el .m{font-family:var(--mono);font-size:11.5px}.planp .el .s{margin-left:auto;font-size:10px;color:var(--sug)}.planp .el .s.ed{color:var(--sel)}
+.planp .el .x{color:var(--mute);cursor:pointer;margin-left:6px}
+.planp .th{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.planp .act{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--line2);background:var(--paper)}
+.planp .act .n{margin-left:auto;font-size:11px;color:var(--mute);align-self:center}
+
+.focus .body{grid-template-columns:minmax(0,1fr) 320px}
+.focus .left{display:none}
+.intent{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line2);background:var(--sugBg)}
+.intent input{flex:1;font:inherit;font-size:14px;padding:6px 10px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink)}
+.intent .m{font-size:12px;color:var(--ink2);white-space:nowrap}
+.chg{font-size:11px;color:var(--ok);background:var(--okBg);border-radius:4px;padding:2px 6px;display:inline-block;margin-top:4px}
+.newbtn{background:var(--sel);color:#fff;border-color:var(--sel)}
+
+.focus .body{grid-template-columns:auto minmax(0,1fr) 320px}
+.focus .left{display:block;width:34px;padding:8px 4px;transition:width .15s}
+.focus .left.open{width:210px;padding:10px 8px}
+.rail{writing-mode:vertical-rl;transform:rotate(180deg);font-size:11.5px;color:var(--ink2);cursor:pointer;padding:6px 2px;white-space:nowrap}
+.rail:hover{color:var(--sel)}
+.focus .left.open .rail{writing-mode:horizontal-tb;transform:none;padding:0 6px 6px;border-bottom:1px solid var(--line2);margin-bottom:6px;display:flex;gap:6px;align-items:center}
+
+.mg{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}
+.sec{padding:8px 12px;border-bottom:1px solid var(--line2)}
+.sec h5{margin:0 0 4px;font-size:12px;font-weight:600;display:flex;gap:8px;align-items:center}
+.sec h5 .s{margin-left:auto;font-size:10.5px;padding:0 6px;border-radius:3px}
+.s.g{background:var(--okBg);color:var(--ok)}.s.a{background:var(--sugBg);color:var(--sug)}.s.b{background:var(--badBg);color:var(--bad)}.s.n{background:var(--well);color:var(--ink2)}
+.sec .row{display:flex;gap:8px;font-size:12px;padding:2px 0;color:var(--ink2);align-items:center}.sec .row b{font-weight:500;color:var(--ink)}.sec .row .r{margin-left:auto;font-family:var(--mono);font-size:11px}
+.job{display:flex;gap:8px;align-items:center;font-size:12px;padding:2px 0}.job .st{width:8px;height:8px;border-radius:4px;flex:none}
+.mact{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--line2);background:var(--paper);align-items:center;flex-wrap:wrap}
+.mact .n{font-size:11px;color:var(--mute);flex-basis:100%}
+
+.shell.planning{box-shadow:0 0 0 2px var(--sug)}.shell.editing{box-shadow:0 0 0 2px var(--sel)}
+.modelbl{font-size:11px;padding:1px 8px;border-radius:10px;margin-left:6px}.modelbl.p{background:var(--sugBg);color:var(--sug)}
+</style>
+<style>
+.steps{grid-template-columns:repeat(10,1fr)}
+.tabs{display:flex;gap:2px;background:var(--well);border-radius:6px;padding:2px;font-size:12px}.tabs span{padding:3px 10px;border-radius:4px;color:var(--ink2);display:flex;gap:6px;align-items:center}.tabs span.on{background:var(--paper);color:var(--ink);font-weight:500}.tabs span.f{font-family:var(--mono);font-size:11.5px}.tabs span .x{color:var(--mute);font-size:10px}.tabs span.pin{border-right:1px solid var(--line);margin-right:2px;border-radius:4px 0 0 4px}
+.crumb{font-size:11.5px;color:var(--ink2);display:flex;gap:6px;align-items:center}.crumb b{font-weight:500;color:var(--ink);font-family:var(--mono)}.crumb i{font-style:normal;color:var(--mute)}
+.selh{padding:8px 12px;border-bottom:1px solid var(--line2);display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px}.selh b{font-family:var(--mono);font-weight:500;font-size:13px}.selh .c{color:var(--ink2)}.selh .c i{font-style:normal;font-weight:500;color:var(--ink)}.selh .c.w{color:var(--sug)}.selh .acts{flex-basis:100%;display:flex;gap:4px;align-items:center}.selh .acts button{font-size:11.5px;padding:2px 9px}.segv{display:inline-flex;gap:2px;background:var(--well);border-radius:6px;padding:2px}.segv span{padding:2px 10px;border-radius:4px;color:var(--ink2);cursor:pointer;font-size:11.5px}.segv span.on{background:var(--paper);color:var(--ink);font-weight:500}
+.right .code{font-size:11px}
+.ed{display:flex;flex-direction:column;height:100%}.ed .eh{display:flex;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line2);font-size:11.5px;color:var(--ink2)}.ed .eh b{font-family:var(--mono);font-weight:500;color:var(--ink)}.ed .eh .r{margin-left:auto;display:flex;gap:8px}.ed .code{font-size:12px;flex:1;overflow:auto}
+.mini{padding:10px 12px;font-size:11.5px;color:var(--ink2)}.mini .ph{display:flex;margin-bottom:6px}.mini .ph b{font-weight:500;color:var(--ink)}.mini .ph span{margin-left:auto;color:var(--sel);cursor:pointer}
+.rt{padding:6px 12px;font-family:var(--mono);font-size:11.5px;overflow:auto}.rt .sec{font-family:var(--sans);font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);margin:8px 0 2px}.rt .r{display:flex;align-items:center;gap:6px;padding:3px 0;white-space:nowrap}.rt .tw{width:10px;color:var(--mute);font-size:9px}.rt .id{color:var(--sel);cursor:pointer}.rt .w{margin-left:auto;font-size:10.5px;color:var(--mute)}.rt .tag{font-family:var(--sans);font-size:10px;padding:0 5px;border-radius:3px;background:var(--well);color:var(--ink2)}.rt .tag.u{background:var(--sugBg);color:var(--sug)}.l1{padding-left:14px}
+.ctx{position:absolute;left:300px;top:150px;background:var(--paper);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.12);font-size:12.5px;min-width:190px;z-index:3}.ctx div{padding:6px 12px}.ctx div:hover{background:var(--well)}.ctx .hd{color:var(--mute);font-size:11px}
+.fold{color:var(--mute);font-size:10.5px;padding:0 12px 0 44px}
+.map{padding:0!important;display:flex;flex-direction:column}
+.tabbar{display:flex;align-items:stretch;border-bottom:1px solid var(--line2);background:var(--well);font-size:12px;height:32px}
+.tabbar .t{display:flex;align-items:center;gap:8px;padding:0 12px;border-right:1px solid var(--line2);color:var(--ink2);cursor:pointer;white-space:nowrap}
+.tabbar .t.on{background:var(--paper);color:var(--ink);box-shadow:inset 0 2px 0 var(--sel)}
+.tabbar .t.f{font-family:var(--mono);font-size:11.5px}.tabbar .t .x{color:var(--mute);font-size:10px}.tabbar .t .ico{width:6px;height:6px;border-radius:3px;background:var(--sel);display:inline-block}
+.tabbar .t.pin{padding-left:10px}.tabbar .t.pin .x{display:none}
+.tabbar .sp{flex:1}.tabbar .r{display:flex;align-items:center;gap:10px;padding:0 10px;color:var(--mute);font-size:11px}
+.mapin{padding:12px;position:relative;flex:1;min-height:0;overflow:auto}
+.ed{flex:1}
+</style><style>
+
+.left{display:flex;flex-direction:column}
+.tr .mk{margin-left:auto;font-family:var(--mono);font-size:10.5px;padding:0 4px;border-radius:3px}.mk.M{color:var(--sel);background:var(--selBg)}.mk.A{color:var(--ok);background:var(--okBg)}.mk.C{color:var(--bad);background:var(--badBg)}
+.band{margin-top:auto;border-radius:6px;padding:8px 10px;font-size:12px;color:var(--ink);background:var(--well);position:relative;overflow:hidden}
+.band .l1{display:flex;gap:6px;align-items:center;font-weight:500;flex-wrap:wrap}.band .l1 .g{flex-basis:100%;font-family:var(--mono);font-size:11px;font-weight:400;color:var(--ink2);margin-top:2px}
+.band .badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.bd2{font-size:10.5px;padding:0 6px;border-radius:3px;background:var(--paper);border:1px solid var(--line);color:var(--ink2)}.bd2.b{border-color:var(--sel);color:var(--sel)}.bd2.w{border-color:var(--sug);color:var(--sug)}.bd2.r{border-color:var(--bad);color:var(--bad)}
+.band.live::before{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 0%,rgba(107,91,210,.18) 35%,rgba(107,91,210,.32) 50%,rgba(107,91,210,.18) 65%,transparent 100%);background-size:250% 100%;animation:sweep 3.2s linear infinite;pointer-events:none}
+.band.wait::before{content:"";position:absolute;inset:0;background:rgba(184,122,14,.18);animation:pulseOp 1.6s ease-in-out infinite;pointer-events:none}
+@keyframes pulseOp{0%,100%{opacity:.35}50%{opacity:1}}
+.band.red{background:var(--badBg);color:var(--bad)}.band.red .l1 .g{color:var(--bad)}
+@keyframes sweep{from{background-position:120% 0}to{background-position:-120% 0}}@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.frame{position:relative;padding:3px;border-radius:0 0 10px 10px;background:transparent}
+.frame.live{background:linear-gradient(120deg,#6B5BD2,#B8AFEF,#6B5BD2,#9C8FE8,#6B5BD2);background-size:300% 100%;animation:sweep 4s linear infinite}
+.frame.wait{background:var(--sug);animation:pulseBg 1.6s ease-in-out infinite}
+@keyframes pulseBg{0%,100%{background:#EAD9B0}50%{background:var(--sug)}}
+.frame.red{background:var(--bad)}.frame.editing{background:var(--sel)}
+.frame>.inner{background:var(--paper);border-radius:0 0 8px 8px;overflow:hidden}
+.shell{border:1px solid var(--line)}
+.dotl{width:8px;height:8px;border-radius:4px;display:inline-block;background:var(--yk);box-shadow:0 0 0 0 rgba(107,91,210,.5);animation:ring 1.6s ease-out infinite}@keyframes ring{to{box-shadow:0 0 0 6px rgba(107,91,210,0)}}
+.gd{border-top:1px solid var(--line2);margin-top:8px;padding-top:6px;font-size:12px}.gd .hd2{display:flex;align-items:center;gap:6px;padding:3px 6px}.gd .hd2 b{font-weight:500}.gd .hd2 .n{margin-left:auto;color:var(--ink2);font-family:var(--mono);font-size:11px}
+.gd .f{display:flex;gap:6px;padding:2px 6px 2px 18px;font-family:var(--mono);font-size:11.5px;color:var(--ink2)}.gd .f .mk{margin-left:auto}
+.gd textarea{width:calc(100% - 12px);margin:6px 6px 4px;height:36px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px;resize:none;background:var(--paper);color:var(--ink)}
+.gd .row{display:flex;gap:6px;padding:0 6px 6px;align-items:center;flex-wrap:wrap}.gd .row .h{flex-basis:100%;font-size:11px;color:var(--mute)}
+.gd .hist{padding:2px 6px 2px 18px;font-family:var(--mono);font-size:11px;color:var(--mute)}
+.rp{padding:12px;font-size:12.5px;overflow:auto}.rp h3{margin:0 0 6px;font-size:13px;font-weight:600}.rp p{margin:0 0 10px;color:var(--ink2)}
+.conf{border:1px solid var(--line);border-radius:6px;margin-bottom:8px;overflow:hidden}.conf .h{display:flex;gap:8px;padding:6px 10px;background:var(--well);font-size:12px;align-items:center}.conf .h b{font-family:var(--mono);font-weight:500}.conf .h .w{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--mute)}
+.conf .side{padding:6px 10px;font-family:var(--mono);font-size:11px;white-space:pre;border-top:1px solid var(--line2)}.conf .side.a{background:var(--okBg)}.conf .side.b{background:var(--selBg)}.conf .lbl{font-family:var(--sans);font-size:10.5px;color:var(--ink2);display:block;margin-bottom:2px}
+.conf .acts{display:flex;gap:4px;padding:6px 10px;border-top:1px solid var(--line2)}.conf .acts button{font-size:11px;padding:2px 8px}
+.warn{background:var(--badBg);border:1px solid var(--bad);border-radius:6px;padding:10px 12px;color:var(--bad);font-size:12.5px;margin-bottom:10px}.warn b{font-weight:600}.warn .a{display:flex;gap:6px;margin-top:8px}.warn .a button{font-size:12px}
+
+.tabs{display:flex;gap:2px;background:var(--well);border-radius:6px;padding:2px}.tabs span{padding:3px 10px;border-radius:4px;color:var(--ink2)}.tabs span.on{background:var(--paper);color:var(--ink);font-weight:500}.tabs span.n{font-family:var(--mono);font-size:11px;color:var(--sel);margin-left:4px}
+.ch{display:grid;grid-template-columns:190px minmax(0,1fr);gap:0;height:100%;font-size:12px}
+.ch .fl{border-right:1px solid var(--line2);padding:6px 4px;overflow:auto}.ch .fl h6{margin:4px 6px 6px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);font-weight:500}
+.ch .fe{display:flex;gap:6px;align-items:center;padding:3px 6px;border-radius:4px;font-family:var(--mono);font-size:11.5px}.ch .fe.on{background:var(--selBg)}.ch .fe .mk{margin-left:auto}
+.ch .df{padding:6px 10px;overflow:auto}.ch .hk{border:1px solid var(--line);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:11.5px;margin-bottom:8px}.ch .hk .hh{background:var(--well);padding:3px 8px;color:var(--ink2);display:flex;gap:8px;font-family:var(--sans);align-items:center}.ch .hk .hh .a{margin-left:auto;display:flex;gap:4px}.ch .hk .hh button{font-size:10.5px;padding:1px 7px}.ch .hk .l{padding:0 8px;white-space:pre}.ch .hk .l.a{background:var(--okBg)}.ch .hk .l.d{background:var(--badBg)}
+.ch .cm{margin:8px 10px 0;border:1px dashed var(--sel);border-radius:6px;padding:6px 8px;font-size:11.5px;color:var(--ink2)}.ch .cm b{color:var(--sel);font-weight:500}
+.cp{padding:10px 12px;font-size:12.5px;display:flex;flex-direction:column;gap:8px;height:100%}.cp textarea{width:100%;height:56px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:6px;resize:none;background:var(--paper);color:var(--ink)}
+.cp .bt{display:flex;gap:6px;align-items:center}.cp .hint{font-size:11px;color:var(--mute)}
+.cp h6{margin:8px 0 2px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);font-weight:500;display:flex}.cp h6 span{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400}
+.cp .c{display:flex;gap:8px;align-items:center;padding:4px 0;border-top:1px solid var(--line2);font-size:12px}.cp .c .sha{font-family:var(--mono);font-size:11px;color:var(--mute)}.cp .c .who{margin-left:auto;font-size:11px;color:var(--ink2)}.cp .c.new{background:var(--sugBg);margin:0 -12px;padding-left:12px;padding-right:12px}
+.cp .c .dot{width:7px;height:7px;border-radius:4px}
+</style>
+<style>
+
+.tw{display:grid;grid-template-columns:230px minmax(0,1fr);height:100%;font-size:12px}
+.tw .l{border-right:1px solid var(--line2);display:flex;flex-direction:column;min-height:0}
+.tw h6{margin:0;padding:6px 8px;font-size:11px;font-weight:600;color:var(--ink2);display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--line2)}.tw h6 .n{margin-left:auto;font-weight:400;font-family:var(--mono)}
+.cl{padding:4px 0;overflow:auto}.cl .g{display:flex;gap:6px;align-items:center;padding:3px 8px;font-weight:500}.cl .g .n{margin-left:auto;font-weight:400;color:var(--mute);font-family:var(--mono);font-size:11px}
+.cl .f{display:flex;gap:6px;align-items:center;padding:2px 8px 2px 22px;font-family:var(--mono);font-size:11.5px}.cl .f.on{background:var(--selBg)}.cl .f .p{color:var(--mute)}.cl .f .mk{margin-left:auto}
+.cmsg{border-top:1px solid var(--line2);padding:8px;display:flex;flex-direction:column;gap:6px;margin-top:auto}.cmsg textarea{width:100%;height:60px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:6px;resize:none;background:var(--paper);color:var(--ink)}
+.cmsg .opt{display:flex;gap:10px;font-size:11px;color:var(--ink2);flex-wrap:wrap}.cmsg .bt{display:flex;gap:6px}
+.dv{overflow:auto;padding:8px 10px}.dv .hh{font-size:11.5px;color:var(--ink2);margin-bottom:6px;display:flex;gap:8px;align-items:center}.dv .hh .r{margin-left:auto;display:flex;gap:4px}.dv .hh button{font-size:10.5px;padding:1px 7px}
+.sbs{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:11px}.sbs>div{padding:4px 0}.sbs>div+div{border-left:1px solid var(--line2)}.sbs .ln{padding:0 8px;white-space:pre}.sbs .ln.d{background:var(--badBg)}.sbs .ln.a{background:var(--okBg)}.sbs .cap{font-family:var(--sans);font-size:10.5px;color:var(--mute);padding:2px 8px;border-bottom:1px solid var(--line2)}
+.log{padding:0;overflow:auto;font-size:12px}.log .row{display:grid;grid-template-columns:70px 1fr 120px 110px 70px;gap:8px;padding:4px 10px;border-bottom:1px solid var(--line2);align-items:center}.log .row.h{font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}.log .row.on{background:var(--selBg)}
+.log .gr{font-family:var(--mono);font-size:11px;color:var(--mute)}.log .lbl{font-size:10px;padding:0 5px;border-radius:3px;background:var(--well);color:var(--ink2);margin-right:4px}.log .lbl.b{background:var(--okBg);color:var(--ok)}.log .lbl.v{background:var(--ykBg);color:var(--yk)}
+.dlg{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:520px;background:var(--paper);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 48px rgba(0,0,0,.2);z-index:5;font-size:12.5px}.dlg .t{padding:10px 14px;border-bottom:1px solid var(--line2);font-weight:600}.dlg .b{padding:12px 14px}.dlg .b p{margin:0 0 8px;color:var(--ink2)}.dlg label{display:flex;gap:8px;align-items:center;padding:3px 0}.dlg .ft{padding:10px 14px;border-top:1px solid var(--line2);display:flex;gap:6px;justify-content:flex-end}
+.dlg table{width:100%;border-collapse:collapse;font-size:12px}.dlg td,.dlg th{padding:5px 6px;border-bottom:1px solid var(--line2);text-align:left}.dlg th{font-size:10.5px;color:var(--mute);font-weight:500;text-transform:uppercase}.dlg td.m{font-family:var(--mono);font-size:11.5px}.dlg td .a{display:flex;gap:4px}.dlg td button{font-size:10.5px;padding:1px 7px}
+.dim{opacity:.35;pointer-events:none}
+.m3{display:grid;grid-template-columns:1fr 1fr 1fr;height:100%;font-family:var(--mono);font-size:11px}.m3>div{border-right:1px solid var(--line2);overflow:auto}.m3>div:last-child{border-right:none}.m3 .cap{font-family:var(--sans);font-size:11px;font-weight:600;color:var(--ink2);padding:6px 10px;border-bottom:1px solid var(--line2);background:var(--well);display:flex;gap:6px;align-items:center}.m3 .cap .n{margin-left:auto;font-weight:400;color:var(--mute)}.m3 .ln{padding:1px 8px;white-space:pre;position:relative;overflow:hidden;text-overflow:ellipsis}.m3 .ln.y{background:var(--okBg)}.m3 .ln.t{background:var(--selBg)}.m3 .ln.c{background:var(--badBg)}.m3 .ln.res{background:#FFF7DB}.m3 .arr{position:absolute;top:0;font-family:var(--sans);font-size:10px;color:var(--sel);cursor:pointer;background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:0 4px}.m3 .ln .arr.r{right:4px}.m3 .ln .arr.l{left:4px}
+.m3 .tb{display:flex;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line2);font-family:var(--sans);font-size:11.5px;align-items:center;grid-column:1/4}.m3 .tb .n{margin-left:auto;color:var(--mute)}
+.m3w{display:flex;flex-direction:column;height:100%}.m3w .m3{flex:1}
+.ctx2{position:absolute;left:40%;top:30%;background:var(--paper);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.12);font-size:12.5px;min-width:200px;z-index:4}.ctx2 div{padding:6px 12px}.ctx2 div:hover{background:var(--well)}.ctx2 .hd{color:var(--mute);font-size:11px}.ctx2 .sep{border-top:1px solid var(--line2);padding:0;margin:3px 0}
+</style>
+<style>
+.hintpill{display:inline-flex;align-items:center;gap:6px;background:var(--badBg);color:var(--bad);border:1px solid var(--bad);border-radius:10px;padding:1px 10px;font-size:12px;cursor:pointer;font-weight:500}
+.focus .left{width:230px}.focus .body{grid-template-columns:230px minmax(0,1fr) 280px}
+.cl2{padding:8px}.cl2 h6{margin:0 0 6px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);font-weight:500;display:flex}.cl2 h6 span{margin-left:auto}
+.cl2 .c{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;padding:6px 8px;border-radius:5px;margin-bottom:4px;font-size:12px}.cl2 .c.on{background:var(--selBg)}.cl2 .c .f{font-family:var(--mono);font-size:11.5px}.cl2 .c .it{grid-column:2;font-family:var(--mono);font-size:11px;color:var(--ink2)}.cl2 .c .st{grid-column:2;font-size:10.5px}.cl2 .c .st.o{color:var(--bad)}.cl2 .c .st.d{color:var(--ok)}
+.cl2 .dot{width:8px;height:8px;border-radius:4px;margin-top:4px}
+.fx{padding:10px 12px;font-size:12.5px;display:flex;flex-direction:column;gap:10px;height:100%}.fx h4{margin:0;font-size:13px;font-weight:600}.fx .box{border:1px solid var(--line);border-radius:6px;padding:8px 10px}.fx .box b{font-weight:500}.fx .box p{margin:4px 0 0;color:var(--ink2);font-size:12px}.fx .box.p{border-color:var(--sel)}
+.fx .acts{margin-top:auto;display:flex;flex-direction:column;gap:6px}.fx .acts button{text-align:left}
+.fx .who{font-family:var(--mono);font-size:11.5px;color:var(--ink2);line-height:1.6}
+</style>
+<style>
+.acts2{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.ac{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;font-size:12px;background:var(--paper)}
+.ac .k{font-size:10px;padding:0 5px;border-radius:3px}.ac .k.r{background:var(--badBg);color:var(--bad)}.ac .k.a{background:var(--sugBg);color:var(--sug)}.ac .k.b{background:var(--selBg);color:var(--sel)}.ac .k.v{background:var(--ykBg);color:var(--yk)}
+.ac a{color:var(--sel);cursor:pointer}.ac a.p{font-weight:600}.ac .sep{color:var(--mute)}
+.aq{padding:10px 12px;font-size:12.5px}.aq h3{margin:0 0 8px;font-size:13px;font-weight:600}
+.aq .it{border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:8px}.aq .it .h{display:flex;gap:8px;align-items:center;font-weight:500}.aq .it .h .k{margin-left:auto}.aq .it .src{font-size:11px;color:var(--mute);margin:2px 0 6px}.aq .it .l{display:flex;gap:6px;flex-wrap:wrap}.aq .it .l button{font-size:11.5px;padding:2px 8px}
+.hk2{border:1px solid var(--line);border-radius:6px;overflow:hidden;font-family:var(--mono);font-size:11.5px;margin:8px 10px}.hk2 .hh{background:var(--well);padding:3px 8px;color:var(--ink2);display:flex;gap:8px;font-family:var(--sans);align-items:center}.hk2 .hh .sg{margin-left:auto;font-size:10px;padding:0 5px;border-radius:3px;background:var(--badBg);color:var(--bad)}.hk2 .hh .sg.g{background:var(--okBg);color:var(--ok)}.hk2 .l{padding:0 8px;white-space:pre}.hk2 .l.a{background:var(--okBg)}.hk2 .l.d{background:var(--badBg)}
+.rvl{padding:8px;font-size:12px}.rvl h6{margin:0 0 4px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);font-weight:500}.rvl .f{display:flex;gap:6px;padding:3px 6px;border-radius:4px;font-family:var(--mono);font-size:11.5px}.rvl .f.on{background:var(--selBg)}.rvl .f .b{margin-left:auto;font-family:var(--sans);font-size:10px;padding:0 5px;border-radius:3px;background:var(--badBg);color:var(--bad)}
+</style>
+<style>
+.psw{display:flex;gap:2px;background:var(--well);border-radius:6px;padding:2px;margin:0 0 8px;font-size:12px}.psw span{flex:1;text-align:center;padding:2px 0;border-radius:4px;color:var(--ink2);cursor:pointer}.psw span.on{background:var(--paper);color:var(--ink);font-weight:500}.psw span .n{font-family:var(--mono);font-size:10.5px;color:var(--sel);margin-left:4px}
+.gitv{display:flex;flex-direction:column;height:100%;font-size:12px}
+.gitv .sync{display:flex;gap:8px;align-items:center;padding:4px 6px 8px;font-size:11.5px;color:var(--ink2)}.gitv .sync b{font-weight:500;color:var(--ink)}.gitv .sync button{margin-left:auto;font-size:11px;padding:2px 8px}
+.gitv h6{margin:6px 0 4px;font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);font-weight:500;display:flex;padding:0 6px}.gitv h6 span{margin-left:auto;font-family:var(--mono);text-transform:none;letter-spacing:0}
+.gitv .f{display:flex;gap:6px;align-items:center;padding:3px 6px;border-radius:4px;font-family:var(--mono);font-size:11.5px;cursor:pointer}.gitv .f.on{background:var(--selBg)}.gitv .f .p{color:var(--mute)}.gitv .f .mk{margin-left:auto}
+.gitv .form{padding:6px;display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line2);margin-top:6px}.gitv .form input,.gitv .form textarea{width:100%;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px 7px;background:var(--paper);color:var(--ink)}.gitv .form textarea{height:44px;resize:none}
+.gitv .form .bt{display:flex;gap:6px;align-items:center}.gitv .form .bt button.primary{flex:1;padding:6px}.gitv .form .bt .k{font-size:10.5px;color:var(--mute)}
+.gitv .form .src{font-size:10.5px;color:var(--mute)}
+.stack{padding:4px 6px;border-top:1px solid var(--line2);margin-top:8px;overflow:auto}.stack .cm{display:grid;grid-template-columns:14px 1fr;gap:0 6px;padding:3px 0;font-size:11.5px;align-items:start;cursor:pointer;border-radius:4px}.stack .cm.on{background:var(--selBg)}.stack .cm .g{color:var(--mute);font-family:var(--mono);text-align:center;line-height:1.3}.stack .cm .m{color:var(--ink)}.stack .cm .w{font-size:10.5px;color:var(--mute);grid-column:2}.stack .cm.pend .m{color:var(--sel);font-weight:500}.stack .cm.main .m{color:var(--ok)}
+.stack .lbl{font-size:9.5px;padding:0 4px;border-radius:3px;background:var(--well);color:var(--ink2);margin-left:4px}.stack .lbl.v{background:var(--ykBg);color:var(--yk)}.stack .lbl.b{background:var(--okBg);color:var(--ok)}
+.dtab{padding:0;height:100%;display:flex;flex-direction:column}.dtab .dh{display:flex;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line2);font-size:11.5px;color:var(--ink2)}.dtab .dh b{font-family:var(--mono);font-weight:500;color:var(--ink)}.dtab .dh .r{margin-left:auto;display:flex;gap:6px}.dtab .dh button{font-size:10.5px;padding:1px 7px}
+.dtab .sbs{margin:10px 12px}
+</style>
+<style>
+.flt{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px}.flt span{font-size:11px;padding:1px 8px;border-radius:10px;border:1px solid var(--line);color:var(--ink2);cursor:pointer}.flt span.on{background:var(--selBg);border-color:var(--sel);color:var(--sel)}
+.ord{font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--mute);margin:8px 0 4px}
+.msg.ag.yk{background:transparent;border:1px solid var(--yk);border-left:3px solid var(--yk)}.msg.ag.yk .who{color:var(--yk)}
+</style>
+<style>
+.steps .step b{font-size:12px}.steps .step span{font-size:11px}
+.gt{display:flex;flex-direction:column;height:100%}.gt .bar{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line2);font-size:11.5px}.gt .bar input{flex:1;font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink)}.gt .bar .f{font-size:11px;padding:1px 8px;border-radius:10px;border:1px solid var(--line);color:var(--ink2)}.gt .bar .f.on{background:var(--selBg);border-color:var(--sel);color:var(--sel)}
+.gt .rows{overflow:auto;font-size:12px}.gt .row{display:grid;grid-template-columns:90px 1fr 150px 100px 70px;gap:8px;padding:4px 10px;border-bottom:1px solid var(--line2);align-items:center}.gt .row.h{font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}.gt .row.hit{background:var(--sugBg)}.gt .gr{font-family:var(--mono);font-size:11px;color:var(--mute);white-space:pre}.gt .lbl{font-size:10px;padding:0 5px;border-radius:3px;background:var(--well);color:var(--ink2);margin-right:4px}.gt .lbl.b{background:var(--okBg);color:var(--ok)}.gt .lbl.v{background:var(--ykBg);color:var(--yk)}.gt .lbl.r{background:var(--selBg);color:var(--sel)}
+.dlg select{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink);width:100%}.dlg .ex{font-size:11.5px;color:var(--ink2);margin:4px 0 10px;padding-left:2px}
+.rq{position:absolute;left:34%;top:40%;width:360px;background:var(--paper);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.16);z-index:4;font-size:12.5px}.rq .t{padding:8px 12px;border-bottom:1px solid var(--line2);font-weight:600;display:flex;gap:8px;align-items:center}.rq .t .to{margin-left:auto;font-weight:400;color:var(--yk);font-size:12px}.rq .b{padding:10px 12px}.rq textarea{width:100%;height:56px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:6px;resize:none;background:var(--paper);color:var(--ink)}.rq .att{font-family:var(--mono);font-size:11px;color:var(--ink2);background:var(--well);border-radius:4px;padding:4px 6px;margin-bottom:6px}.rq .ft{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--line2);align-items:center}.rq .ft .k{margin-left:auto;font-size:10.5px;color:var(--mute)}
+.flowmap{padding:14px 18px;overflow:auto;height:100%}.flowmap pre{margin:0}
+</style>
+<style>
+.nav{display:grid;grid-template-columns:repeat(8,minmax(0,150px));justify-content:center;grid-template-rows:auto auto auto;gap:40px 70px;margin-bottom:26px;position:relative;padding:22px 0 30px}
+.nav .step{padding:6px 8px;min-height:44px}.nav .step b{font-size:11.5px;line-height:1.2}.nav .step span{font-size:10.5px;line-height:1.25}
+.nav .step{grid-row:2}.nav .step.top{grid-row:1}.nav .step.bot{grid-row:3}
+.nav .step{min-height:56px}.nav .step b{font-size:12px}.nav .step span{font-size:11px}
+.nav .lane{grid-row:1;grid-column:1/10;font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;align-self:end;padding:0 2px}
+.nav .step{display:flex;flex-direction:column;gap:2px;position:relative}
+.nav .lbl2{font-size:10px;color:var(--sel);text-transform:uppercase;letter-spacing:.3px}
+.nav .step.pseudo{border-style:dashed;background:transparent;color:var(--ink2);align-self:center;min-height:36px}.nav .step.pseudo b{font-size:11.5px}
+.nav .step{align-self:center}
+</style>
+</head><body><div class="page">
+<h1>Git: Changes, the stack, update, conflicts</h1>
+<p class="lead">Level 2, on the base. Git is the second view of the branch in the left pane: GitHub Desktop's changes-and-commit panel with Sapling's commit stack under it, diffs as center tabs, and problems as Actions chips with their links. Conflicts are agent-first with a manual three-way fallback. arch annotates (prefilled messages, who feels a conflict, a verified proposal) and never invents a git surface of its own.</p>
+<div class="nav" id="steps"></div>
+<div class="shell">
+  <div class="top"><span class="brand">arch</span><span style="color:var(--ink2)">orderly</span><span class="lbl">branch</span><div class="cur" id="cur"><span class="dot" style="background:var(--ok)"></span> feat/notify-ship <span style="color:var(--mute)">▾</span></div><div class="right"><span style="color:var(--ink2);white-space:nowrap">Git ▾</span><span class="pill">●●○○</span><span style="white-space:nowrap">Ask ⌘K</span></div></div>
+  <div class="frame" id="frame"><div class="inner">
+  <div class="strip" id="strip"></div>
+  <div class="body"><div class="left" id="left"></div><div class="map" id="map" style="position:relative"></div><div class="right" id="right"></div></div>
+  <div class="status" id="status"></div>
+  </div></div>
+</div>
+<div class="note" id="note"></div></div>
+<script>
+const STEPS=[
+ {k:'entry',t:'▶ a branch',s:'entry',col:1,pseudo:true},
+ {k:'menu',t:'1 · Changes view',s:'Files | Changes',col:2},
+ {k:'commit',t:'2 · Diff and commit',s:'Diff tab · ⌘↩',col:3,row:'top'},
+ {k:'log',t:'3 · The stack',s:'Commits since main',col:3},
+ {k:'tree',t:'4 · Git tree',s:'Whole repo, search',col:4,row:'top'},
+ {k:'update',t:'5 · Update',s:'[Rebase] | [Merge]',col:4},
+ {k:'hint',t:'6 · Actions',s:'2 conflicts · two doors',col:5},
+ {k:'tool',t:'7a · Resolve myself',s:'the manual focus',col:6,row:'top'},
+ {k:'agent',t:'7b · Agent resolves',s:'with Yokohama',col:6,row:'bot'},
+ {k:'rev',t:'8 · Review the resolution',s:'Accept · Send back · Change it',col:7},
+ {k:'exit',t:'■ Push · MR',s:'exit',col:8,pseudo:true}];
+let i=1;const $=id=>document.getElementById(id);
+const EDGES=[
+ {f:'entry',t:'menu',l:'Changes · chip'},
+ {f:'menu',t:'commit',l:'click a changed file'},
+ {f:'commit',t:'menu',l:'⌘↩ commit · back'},
+ {f:'menu',t:'log',l:'stack below'},
+ {f:'log',t:'tree',l:'full tree ▸ · ⌘⇧G'},
+ {f:'log',t:'update',l:'chip · ⌘T'},
+ {f:'update',t:'hint',l:'OK · conflicts'},
+ {f:'hint',t:'tool',l:'Resolve myself'},
+ {f:'hint',t:'agent',l:'with Yokohama'},
+ {f:'agent',t:'tool',l:'take over'},
+ {f:'tool',t:'rev',l:'Continue update'},
+ {f:'agent',t:'rev',l:'agent commits'},
+ {f:'rev',t:'agent',l:'Send back…'},
+ {f:'rev',t:'tool',l:'Change it myself'},
+ {f:'rev',t:'exit',l:'Accept → Push'}];
+function drawEdges(){const nav=$('steps');let svg=nav.querySelector('svg.edges');if(svg)svg.remove();svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('class','edges');const R=nav.getBoundingClientRect();svg.setAttribute('width',R.width);svg.setAttribute('height',R.height);svg.style.cssText='position:absolute;left:0;top:0;pointer-events:none;overflow:visible';
+ svg.innerHTML='<defs><marker id="na" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="#6C707E"/></marker></defs>';
+ const box=k=>{const el=nav.querySelector(`[data-k="${k}"]`);if(!el)return null;const b=el.getBoundingClientRect();return {x:b.left-R.left,y:b.top-R.top,w:b.width,h:b.height}};
+ EDGES.forEach(e=>{const a=box(e.f),b=box(e.t);if(!a||!b)return;let x1,y1,x2,y2;
+  const far=(a.x+a.w<=b.x)&&(b.x-(a.x+a.w)>a.w);
+  if(a.x+a.w<=b.x&&!far){x1=a.x+a.w;y1=a.y+a.h/2;x2=b.x;y2=b.y+b.h/2}
+  else if(far){x1=a.x+a.w/2;y1=a.y;x2=b.x+b.w/2;y2=b.y}
+  else if(b.x+b.w<=a.x){x1=a.x+a.w/2;y1=a.y+a.h;x2=b.x+b.w/2;y2=b.y+b.h}
+  else if(a.y>b.y){x1=a.x+a.w/2;y1=a.y;x2=b.x+b.w/2;y2=b.y+b.h}else{x1=a.x+a.w/2;y1=a.y+a.h;x2=b.x+b.w/2;y2=b.y}
+  const mx=(x1+x2)/2,my=(y1+y2)/2;const back=(b.x+b.w<=a.x);
+  const dip=Math.min(46,Math.abs(x1-x2)/6+18);
+  const d=back?`M${x1},${y1} C${x1},${y1+dip} ${x2},${y2+dip} ${x2},${y2}`:far?`M${x1},${y1} C${x1},${y1-dip} ${x2},${y2-dip} ${x2},${y2}`:(x1!==x2&&y1!==y2)?`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`:`M${x1},${y1} L${x2},${y2}`;
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',d);path.setAttribute('fill','none');path.setAttribute('stroke',back?'#B87A0E':'#6C707E');path.setAttribute('stroke-width','1.2');if(back)path.setAttribute('stroke-dasharray','3 3');path.setAttribute('marker-end','url(#na)');svg.appendChild(path);
+  const t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('x',mx);t.setAttribute('y',back?(my+dip*0.75+4):far?(my-dip*0.75-2):(y1===y2?my-9:my-4));t.setAttribute('text-anchor','middle');t.setAttribute('font-size','9');t.setAttribute('fill',back?'#854F0B':'#4A5B64');t.textContent=e.l;
+  const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');svg.appendChild(bg);svg.appendChild(t);const tb=t.getBBox();bg.setAttribute('x',tb.x-3);bg.setAttribute('y',tb.y-1);bg.setAttribute('width',tb.width+6);bg.setAttribute('height',tb.height+2);bg.setAttribute('fill','var(--bg)');bg.setAttribute('rx','3');});
+ nav.appendChild(svg)}
+const tabs=o=>`<div class="tabbar"><span class="t pin ${o.on==='map'?'on':''}">Map</span>${o.files?o.files.map(f=>`<span class="t f ${o.on===f?'on':''}">${o.dirty===f?'<span class="ico"></span>':''}${f}<span class="x">✕</span></span>`).join(''):''}<span class="sp"></span><span class="r">⌘1 Map · ⌘W close · ⌘⇧E explorer</span></div>`;
+const files=o=>`<div class="back">‹ Agents <b>feat/notify-ship</b></div><div class="tr d">api/</div><div class="tr f ${o.on==='service'?'on':''}">service.rs</div><div class="tr f">webhook.rs</div><div class="tr d">domain/</div><div class="tr f">order.rs</div><div class="tr f ${o.on==='ports'?'on':''}">ports.rs</div><div class="tr d">clients/</div><div class="tr f">payments_http.rs</div><div class="tr d">store/</div><div class="tr f">pg.rs</div><div class="tr d">tests/</div><div class="tr f">lifecycle.rs</div><div class="tr d" style="margin-top:6px">Cargo.toml</div>`;
+function map(o){const lit=o.lit||[];const n=(id,x,y,w,l,port)=>{const sel=o.sel===id,on=sel||lit.includes(id);const f=sel?'#E3EEFB':'#F1EFE8',s=sel?'#1F5FA8':on?'#5F5E5A':'#888780';return `<g opacity="${o.focus&&!on?.3:1}"><rect x="${x}" y="${y}" width="${w}" height="18" rx="${port?9:3}" fill="${f}" stroke="${s}" stroke-width="${sel?1.6:1}"/><text x="${x+(port?9:5)}" y="${y+12.5}" font-family="IBM Plex Mono" font-size="9.5" fill="${sel?'#0C447C':'#2C2C2A'}">${l}</text></g>`};const L=id=>o.sel===id||lit.includes(id);const a=(d,on,dash)=>`<path d="${d}" fill="none" stroke="${on?'#1F5FA8':'#888780'}" stroke-width="${on?1.6:1.1}" ${dash?'stroke-dasharray="3 3"':''} opacity="${o.focus&&!on?.3:1}" marker-end="url(#ar)"/>`;
+ return `<svg viewBox="0 0 640 230" style="width:100%;height:auto;font-family:IBM Plex Sans,system-ui,sans-serif" role="img"><title>Map of orderly</title><defs><marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="context-stroke"/></marker></defs>
+<g font-size="9.5" fill="#5F5E5A"><rect x="6" y="6" width="150" height="218" rx="6" fill="none" stroke="#B4B2A9" stroke-dasharray="3 3"/><text x="12" y="20">api · driving</text><rect x="166" y="6" width="150" height="218" rx="6" fill="none" stroke="#B4B2A9" stroke-dasharray="3 3"/><text x="172" y="20">domain</text><rect x="326" y="6" width="150" height="218" rx="6" fill="none" stroke="#B4B2A9" stroke-dasharray="3 3"/><text x="332" y="20">clients · store · driven</text><rect x="486" y="6" width="148" height="218" rx="6" fill="none" stroke="#B4B2A9" stroke-dasharray="3 3"/><text x="492" y="20">outbound</text></g>
+${n('router',14,32,134,'router · entry')}${n('pay',14,62,134,'pay()')}${n('close',14,92,134,'close()')}${n('webhook',14,122,134,'handle_webhook()')}
+${n('order',174,32,134,'Order')}${n('repo',174,72,134,'OrderRepo · port',true)}${n('payp',174,112,134,'Payments · port',true)}${n('status',174,152,134,'Status')}
+${n('pg',334,72,134,'PgOrderRepo')}${n('ph',334,112,134,'PaymentsHttp')}
+${n('postgres',494,72,130,'postgres · sqlx')}${n('payments',494,112,130,'payments · http')}
+${a('M148,71 H160 V81 H172',L('pay')&&L('repo'))}${a('M148,101 H160 V81 H172',L('close')&&L('repo'))}${a('M148,131 H160 V121 H172',L('webhook')&&L('payp'))}
+${a('M334,81 H308',L('pg'),true)}${a('M334,121 H308',L('ph'),true)}${a('M468,81 H492',L('pg'))}${a('M468,121 H492',L('ph'))}
+</svg>`}
+
+const ACT=(items)=>`<div class="acts2">${items.map(x=>`<span class="ac"><span class="k ${x.k}">${x.t}</span>${x.a.map((l,j)=>`${j?'<span class="sep">·</span>':''}<a class="${j?'':'p'}">${l}</a>`).join('')}</span>`).join('')}</div>`;
+const changesView=o=>`<div class="back">‹ Agents <b>feat/notify-ship</b></div><div class="psw"><span>Files</span><span class="on">Changes${o.n===0?'':`<span class="n">${o.n||1}</span>`}</span></div><div class="gitv"><div class="sync"><b>↑ ${o.up||3}</b> to push <b style="margin-left:6px">↓ ${o.down||0}</b> behind main<button>Sync</button></div>
+<h6>changed<span>${o.n===0?0:(o.n||1)}</span></h6>${o.files||'<div class="f on"><input type="checkbox" checked>service.rs<span class="p">api/</span><span class="mk M" style="font-size:10.5px;padding:0 4px;border-radius:3px;color:var(--sel);background:var(--selBg)">M</span></div>'}
+<div class="form"><input value="${o.msg||'ship: route the write through OrderRepo'}"><textarea placeholder="Description (optional)">${o.desc||'Fixes finding: api must not depend on store.'}</textarea><div class="bt"><button class="primary">Commit to feat/notify-ship</button><span class="k">⌘↩</span></div><div class="src">message prefilled from the finding you fixed · arch check runs before commit</div></div>
+<div class="stack"><h6 style="padding:0">stack · since main<span>${o.n===0?'4':'4 + pending'}</span></h6>
+${o.n===0?'':`<div class="cm pend ${o.sel==='pend'?'on':''}"><span class="g">◌</span><span class="m">pending · 1 file</span></div>`}
+<div class="cm ${o.sel==='c4'?'on':''}"><span class="g">●<br>│</span><span class="m">wire OrderService → Notifier<span class="lbl v">Yokohama</span></span><span class="w">c41e2 · 1 min · not pushed</span></div>
+<div class="cm ${o.sel==='c3'?'on':''}"><span class="g">●<br>│</span><span class="m">adapter HttpNotifier<span class="lbl v">Yokohama</span></span><span class="w">9b0f1 · 6 min · not pushed</span></div>
+<div class="cm"><span class="g">●<br>│</span><span class="m">port Notifier<span class="lbl v">Yokohama</span></span><span class="w">3a77d · 9 min · not pushed</span></div>
+<div class="cm"><span class="g">●<br>│</span><span class="m">branch from main</span><span class="w">a1b2c · 2 h · pushed</span></div>
+<div class="cm main"><span class="g">○</span><span class="m">main<span class="lbl b">origin</span></span><span class="w">${o.down?o.down+' commits ahead of this branch':'up to date'}</span></div></div></div>`;
+const gtabs=on=>`<div class="tabbar"><span class="t pin ${on==='map'?'on':''}">Map</span>${on==='diff'?'<span class="t on f">service.rs · diff <span class="x">✕</span></span>':''}${on==='cdiff'?'<span class="t on f">c41e2 · wire OrderService → Notifier <span class="x">✕</span></span>':''}${on==='tool'?'<span class="t on">Merge · ports.rs <span class="x">✕</span></span>':''}<span class="sp"></span><span class="r">⌘↩ commit · ⌘T update · ⇧⌘K push</span></div>`;
+const band=(cls,actor,act,git,badges)=>`<div class="band ${cls}"><div class="l1">${actor}<span style="font-weight:400;color:var(--ink2)">· ${act}</span><span class="g">${git}</span></div><div class="badges">${badges.map(b=>`<span class="bd2 ${b[1]||''}">${b[0]}</span>`).join('')}</div></div>`;
+const commitWin=o=>`<div class="tw"><div class="l"><h6>Commit<span class="n">${o.n}</span></h6><div class="cl"><div class="g"><input type="checkbox" checked>Changes<span class="n">${o.n} files</span></div>${o.files}<div class="g" style="color:var(--mute)"><input type="checkbox">Unversioned<span class="n">0</span></div></div><div class="cmsg"><textarea>${o.msg}</textarea><div class="opt"><label><input type="checkbox">Amend</label><label><input type="checkbox" checked>Run arch check</label><label><input type="checkbox" checked>Reformat</label></div><div class="bt"><button class="sm primary">Commit</button><button class="sm">Commit and Push…</button></div></div></div><div class="dv"><div class="hh"><b style="font-family:var(--mono);font-weight:500">api/service.rs</b><span>· ship()</span><span class="r"><button>Rollback</button><button>Move to another changelist</button><button>Send back to Yokohama…</button></span></div><div class="sbs"><div><div class="cap">HEAD · c41e2 · Yokohama</div><div class="ln">  let receipt = order.ship()?;</div><div class="ln d">  self.store.pg.save(&amp;order).await?;</div><div class="ln">  self.notifier.shipped(ev).await?;</div></div><div><div class="cap">working tree · you</div><div class="ln">  let receipt = order.ship()?;</div><div class="ln a">  self.repo.save(&amp;order).await?;</div><div class="ln">  self.notifier.shipped(ev).await?;</div></div></div><div class="cm" style="margin-top:8px;border:1px dashed var(--sel);border-radius:6px;padding:6px 8px;font-size:11.5px;color:var(--ink2)"><b style="color:var(--sel)">arch</b> · this hunk fixes finding "api must not depend on store" · the message was prefilled from it</div></div></div>`;
+const logWin=`<div class="log"><div class="row h"><span>graph</span><span>message</span><span>branch / tags</span><span>author</span><span>when</span></div>
+<div class="row on"><span class="gr">● │</span><span>ship: route the write through OrderRepo</span><span><span class="lbl b">feat/notify-ship</span></span><span>you</span><span>now</span></div>
+<div class="row"><span class="gr">│ │</span><span>wire OrderService → Notifier</span><span><span class="lbl">origin/feat…</span></span><span><span class="lbl v">Yokohama</span></span><span>1 min</span></div>
+<div class="row"><span class="gr">│ │</span><span>adapter HttpNotifier</span><span></span><span><span class="lbl v">Yokohama</span></span><span>6 min</span></div>
+<div class="row"><span class="gr">│ │</span><span>port Notifier</span><span></span><span><span class="lbl v">Yokohama</span></span><span>9 min</span></div>
+<div class="row"><span class="gr">│ ●</span><span>rule: domain must not depend on clients</span><span><span class="lbl b">main</span> <span class="lbl">origin/main</span></span><span>alice</span><span>20 min</span></div>
+<div class="row"><span class="gr">│ ●</span><span>OrderRepo::save returns RowId</span><span></span><span>bob</span><span>1 h</span></div>
+<div class="row"><span class="gr">●─┘</span><span>branch from main</span><span></span><span>you</span><span>2 h</span></div></div>`;
+
+const previewOf=(w)=>({yours:`<div class="ln a">async fn save(&self, o: &Order, ev: ShipEvent) -> Result<(), StoreError>;</div>`,theirs:`<div class="ln m">async fn save(&self, o: &Order) -> Result<RowId, StoreError>;</div>`,both:`<div class="ln res">async fn save(&self, o: &Order, ev: ShipEvent) -> Result<RowId, StoreError>;</div>`})[w];
+function render(){
+ $('steps').innerHTML=STEPS.map((s,j)=>`<button class="step ${j===i?'on':''} ${s.row||''} ${s.pseudo?'pseudo':''}" style="grid-column:${s.col}" data-j="${j}" data-k="${s.k}" ${s.pseudo?'disabled':''}><b>${s.t}</b><span>${s.s}</span></button>`).join('');
+ $('steps').querySelectorAll('.step:not(.pseudo)').forEach(b=>b.onclick=()=>{i=+b.dataset.j;render()});
+ requestAnimationFrame(drawEdges);
+ const k=STEPS[i].k;const fr=$('frame');fr.className='frame';document.querySelector('.shell').classList.remove('focus');
+ $('status').innerHTML=`<span>Findings 0</span><span>Rules 3</span><span class="r">Map up to date · just now</span>`;
+ const mapv=(o)=>`<div class="mapin">`+map(o)+`</div>`;
+ if(k==='tree'){
+  $('strip').innerHTML=`<span style="color:var(--ink2)">orderly · git tree</span>`+ACT([{k:'b',t:'to push · 4',a:['Push']}]);
+  $('left').innerHTML=changesView({n:0,up:4,down:2,files:'<div style="padding:6px;color:var(--mute);font-size:11.5px">nothing to commit</div>',msg:'',desc:''}).replace('<div class="form">','<div class="form" style="display:none">').replace('<h6 style="padding:0">stack · since main','<h6 style="padding:0"><a style="color:var(--sel)">‹ full tree open</a> · stack');
+  $('map').innerHTML=`<div class="tabbar"><span class="t pin">Map</span><span class="t on">Git tree <span class="x">✕</span></span><span class="sp"></span><span class="r">⌘⇧G</span></div><div class="gt"><div class="bar"><input value="notifier"><span class="f on">all branches</span><span class="f">mine</span><span class="f">agents</span><span class="f">main only</span><span class="f">author ▾</span><span class="f">date ▾</span><span style="color:var(--mute)">3 hits</span></div><div class="rows">
+   <div class="row h"><span>graph</span><span>message</span><span>branch / tags</span><span>author</span><span>when</span></div>
+   <div class="row hit"><span class="gr">● │ │</span><span>wire OrderService → <b>Notifier</b></span><span><span class="lbl b">feat/notify-ship</span></span><span><span class="lbl v">Yokohama</span></span><span>1 min</span></div>
+   <div class="row hit"><span class="gr">● │ │</span><span>adapter Http<b>Notifier</b></span><span></span><span><span class="lbl v">Yokohama</span></span><span>6 min</span></div>
+   <div class="row hit"><span class="gr">● │ │</span><span>port <b>Notifier</b></span><span></span><span><span class="lbl v">Yokohama</span></span><span>9 min</span></div>
+   <div class="row"><span class="gr">│ ● │</span><span>values: prod pool size</span><span><span class="lbl b">fix/values-prod</span></span><span><span class="lbl" style="background:var(--okBg);color:var(--rl)">Raleigh</span></span><span>15 min</span></div>
+   <div class="row"><span class="gr">│ │ ●</span><span>rule: domain must not depend on clients</span><span><span class="lbl b">main</span> <span class="lbl">origin/main</span></span><span>alice</span><span>20 min</span></div>
+   <div class="row"><span class="gr">│ │ ●</span><span>OrderRepo::save returns RowId</span><span></span><span>bob</span><span>1 h</span></div>
+   <div class="row"><span class="gr">●─┼─┘</span><span>branch from main</span><span></span><span>you</span><span>2 h</span></div>
+   <div class="row"><span class="gr">│ ●</span><span>order status page: skeleton</span><span><span class="lbl b">feat/order-status</span></span><span><span class="lbl" style="background:var(--sugBg);color:var(--nb)">Nairobi</span></span><span>3 h</span></div>
+   <div class="row"><span class="gr">●─┘</span><span>release 0.4</span><span><span class="lbl">v0.4</span></span><span>alice</span><span>2 d</span></div>
+  </div></div>`;
+  $('right').innerHTML=`<div class="rp"><h3>Git tree</h3><p>The whole repository: every branch, every session's commits in its colour, tags, main. Search by message, file, item or author; filter by branch kind, author, date. Selecting a commit opens its diff as a tab with cherry-pick, reset, show on map.</p><p>Reached from "full tree" at the top of the stack, from the Git menu, or ⌘⇧G.</p></div>`;
+  $('status').innerHTML=`<span>Findings 0</span><span>Rules 3</span><span class="r">Map up to date · just now</span>`;
+  $('note').innerHTML=`<b>4 · Git tree.</b> The stack answers "what did this branch do"; the tree answers "where is that commit" across the repo. Search is the point: type a word, an item, a file or a name and the matching commits light up in the graph.`;
+ }
+ if(k==='menu'){
+  fr.classList.add('editing');
+  $('strip').innerHTML=`<span style="color:var(--ink2)">feat/notify-ship</span>`+ACT([{k:'b',t:'1 uncommitted',a:['Commit']},{k:'b',t:'to push · 3',a:['Push']}]);
+  $('left').innerHTML=changesView({sel:'pend'});
+  $('map').innerHTML=gtabs('map')+mapv({sel:'repo',focus:true,lit:['pay','close','pg']});
+  $('right').innerHTML=`<div class="rp"><h3>Changes, the second view of the branch</h3><p>At branch level the left pane has two views: Files, and Changes. Changes is GitHub Desktop's panel with Sapling's stack under it:</p><p>• sync line: to push, behind main, one Sync button<br>• changed files with a checkbox each<br>• summary + description, one Commit button that never moves, ⌘↩<br>• the stack: this branch's commits since main, the pending changes as a node at the top, main at the bottom, agent commits labelled</p><p>Click a file for its diff, a commit for its files and diff. The view stays open while you work; the Actions chip "1 uncommitted · Commit" jumps here and focuses the summary.</p></div>`;
+  $('status').innerHTML=`<span>Findings 0</span><span>Rules 3</span><span style="color:var(--sel)">1 uncommitted</span><span class="r">Map up to date · just now</span>`;
+  $('note').innerHTML=`<b>1 · Changes view.</b> No menu, no modal, no tab to find: git is the second view of the branch in the left pane, always one click from Files, with the commit button permanently visible. This is the shape people praise in GitHub Desktop and Sapling's smartlog, on our shell.`;
+ }
+ if(k==='commit'){
+  fr.classList.add('editing');
+  $('strip').innerHTML=`<span style="color:var(--ink2)">feat/notify-ship</span>`+ACT([{k:'b',t:'1 uncommitted',a:['Commit']},{k:'b',t:'to push · 3',a:['Push']}]);
+  $('left').innerHTML=changesView({sel:'pend'});
+  $('map').innerHTML=gtabs('diff')+`<div class="dtab"><div class="dh"><b>api/service.rs</b><span>working tree vs HEAD · 1 hunk</span><span class="r"><button>side by side</button><button>stage hunk</button><button>rollback</button><button>Send back to Yokohama…</button></span></div><div class="sbs"><div><div class="cap">HEAD · c41e2 · Yokohama</div><div class="ln">  let receipt = order.ship()?;</div><div class="ln d">  self.store.pg.save(&amp;order).await?;</div><div class="ln">  self.notifier.shipped(ev).await?;</div></div><div><div class="cap">working tree · you</div><div class="ln">  let receipt = order.ship()?;</div><div class="ln a">  self.repo.save(&amp;order).await?;</div><div class="ln">  self.notifier.shipped(ev).await?;</div></div></div><div style="margin:0 12px;border:1px dashed var(--sel);border-radius:6px;padding:6px 8px;font-size:11.5px;color:var(--ink2)"><b style="color:var(--sel);font-weight:500">arch</b> · this hunk fixes finding "api must not depend on store" · check green on the working tree</div></div>`;
+  $('right').innerHTML=`<div class="mini"><div class="ph"><b>map</b> · what this change touches<span>open Map tab ↗</span></div><div style="font-size:12px;color:var(--ink2)">ship() now calls OrderRepo::save through the port; the direct api → store dependency is gone. 0 findings, 41 tests green.</div><div style="margin-top:10px;font-size:11.5px;color:var(--mute)">⌘↩ commits from anywhere while Changes is the active view; the summary is already filled.</div></div>`;
+  $('status').innerHTML=`<span>Findings 0</span><span>Rules 3</span><span style="color:var(--sel)">1 uncommitted</span><span class="r">Map up to date · just now</span>`;
+  $('note').innerHTML=`<b>2 · Diff and commit.</b> Clicking the file opens its diff as a center tab (VS Code's habit), with stage hunk, rollback and send it back to the agent on the toolbar. The commit form stays in the left pane; ⌘↩ commits. The right pane says what the change does to the map. After the commit the pending node disappears and the stack grows by one.`;
+ }
+ if(k==='log'){
+  $('strip').innerHTML=`<span style="color:var(--ink2)">feat/notify-ship</span>`+ACT([{k:'b',t:'to push · 4',a:['Push']},{k:'a',t:'behind main · 2',a:['Update']}]);
+  $('left').innerHTML=changesView({n:0,up:4,down:2,sel:'c4',files:'<div style="padding:6px;color:var(--mute);font-size:11.5px">nothing to commit</div>',msg:'',desc:''}).replace('<div class="form">','<div class="form" style="display:none">');
+  $('map').innerHTML=gtabs('cdiff')+`<div class="dtab"><div class="dh"><b>c41e2</b><span>wire OrderService → Notifier · Yokohama · 1 min · 2 files</span><span class="r"><button>cherry-pick</button><button>reset to here</button><button>show on map</button></span></div><div class="sbs" style="margin-bottom:0"><div><div class="cap">api/service.rs · before</div><div class="ln">  let receipt = order.ship()?;</div><div class="ln">  self.repo.save(&amp;order).await?;</div></div><div><div class="cap">after</div><div class="ln">  let receipt = order.ship()?;</div><div class="ln">  self.repo.save(&amp;order).await?;</div><div class="ln a">  self.notifier.shipped(ShipEvent::from(&amp;receipt)).await?;</div></div></div><div class="sbs"><div><div class="cap">domain/ports.rs · before</div><div class="ln">}</div></div><div><div class="cap">after</div><div class="ln a">pub trait Notifier: Send + Sync {</div><div class="ln a">  async fn shipped(&amp;self, ev: ShipEvent) -&gt; Result&lt;(), NotifyError&gt;;</div><div class="ln a">}</div></div></div></div>`;
+  $('right').innerHTML=`<div class="mini"><div class="ph"><b>map</b> · this commit<span>open Map tab ↗</span></div><div style="font-size:12px;color:var(--ink2)">Realized the plan element "link OrderService → Notifier". Session Yokohama, sub-agent wire ship().</div><div style="margin-top:10px;font-size:11.5px;color:var(--mute)">the stack shows "not pushed" per commit and main's position; Sync pushes 4 and pulls 2.</div></div>`;
+  $('status').innerHTML=`<span>Findings 0</span><span>Rules 3</span><span class="r">Map up to date · just now</span>`;
+  $('note').innerHTML=`<b>3 · The stack.</b> Sapling's smartlog, reduced to what a branch needs: its commits since main in order, the pending node when there is one, main at the bottom with how far it moved, and per-commit pushed / not pushed. Selecting a commit opens its diff as a center tab with the commit actions on the toolbar. There is no separate log window; the full graph is a tab you open from main.`;
+ }
+ if(k==='update'){
+  $('strip').innerHTML=`<span style="color:var(--ink2)">feat/notify-ship</span>`+ACT([{k:'a',t:'behind main · 2',a:['Update myself','with Yokohama']},{k:'b',t:'to push · 4',a:['Push']}]);
+  $('left').innerHTML=changesView({n:0,up:4,down:2,files:'<div style="padding:6px;color:var(--mute);font-size:11.5px">nothing to commit</div>',msg:'',desc:''}).replace('<div class="form">','<div class="form" style="display:none">');
+  $('map').innerHTML=gtabs('map')+`<div class="dim">`+mapv({})+`</div><div class="dlg"><div class="t">Update feat/notify-ship from main</div><div class="b"><p>main has 2 new commits: "rule: domain must not depend on clients", "OrderRepo::save returns RowId".</p><div style="font-weight:500;margin:6px 0 4px">How</div><select><option selected>[Rebase] · replay this branch's commits on top of main · linear history, recommended</option><option>[Merge] · add a merge commit joining main into this branch · keeps history as it happened</option></select><div class="ex">Rebase keeps the stack readable and is what the Merge pane expects. Choose Merge if the branch is shared and already pushed.</div><div style="font-weight:500;margin:6px 0 4px">Your uncommitted changes</div><select><option selected>[Stash] · git sets your uncommitted changes aside and re-applies them after the update</option><option>[Shelve] · arch stores them as a named patch you re-apply when you choose; survives branch switches</option><option>[Keep] · leave them in place · only safe when they don't touch files main changed</option><option>[Commit first] · commit them, then update</option></select><div class="ex">You have 0 uncommitted changes right now, so this doesn't apply today.</div><p style="font-size:11.5px;margin-top:8px"><b style="font-weight:500">arch:</b> 2 of main's commits touch items this branch changed (OrderRepo::save, ship()). Expect 2 conflicts; you'll get an Actions chip, not a dialog.</p><label style="margin-top:6px"><input type="checkbox" checked>Remember these choices for this repo</label></div><div class="ft"><button class="sm">Cancel</button><button class="sm primary">OK</button></div></div>`;
+  $('right').innerHTML=`<div class="rp"><h3>Update</h3><p>Reached from the chip, the sync line, or ⌘T. Merge or rebase, stash or shelve, remember my choice. On a branch with a running session the agent runs the same update as a task; only conflicts reach you.</p></div>`;
+  $('note').innerHTML=`<b>5 · Update.</b> Three doors, all visible: the Actions chip "behind main · 2 · Update myself", the sync line in the Changes view ("↓ 2 behind main · Sync"), and ⌘T. Each opens this dialog: two selects, each option with one line saying what it does, a sensible default, and one arch line: which of main's commits touch items this branch changed. "with Yokohama" hands the same update to the session as a task.`;
+ }
+ if(k==='hint'){
+  $('cur').innerHTML='<span class="dot" style="background:var(--bad)"></span> feat/notify-ship <span style="color:var(--mute)">▾</span>';
+  $('strip').innerHTML=`<span style="color:var(--ink2)">feat/notify-ship</span>`+ACT([{k:'r',t:'2 conflicts',a:['Resolve myself','with Yokohama']},{k:'a',t:'Yokohama asks',a:['Answer']},{k:'b',t:'1 uncommitted',a:['Commit']},{k:'b',t:'to push · 3',a:['Push']}]);
+  $('left').innerHTML=files({}).replace('ports.rs</div>','ports.rs <span class="mk C" style="margin-left:auto;font-family:var(--mono);font-size:10.5px;padding:0 4px;border-radius:3px;color:var(--bad);background:var(--badBg)">C</span></div>')+band('','nobody','idle','conflicts · 2',[['conflicts · 2','r'],['uncommitted · 1','b'],['to push · 3','b']]);
+  $('map').innerHTML=gtabs('map')+mapv({sel:'repo',focus:true,lit:['pay','close','pg']});
+  $('right').innerHTML=`<div class="aq"><h3>Actions</h3><div class="flt"><span class="on">all · 4</span><span>blocks merge · 1</span><span>waiting on you · 1</span><span>git · 3</span><span>agent · 1</span><span>findings · 0</span><span>review · 0</span><span>pipeline · 0</span></div><div class="ord">1 · blocks the merge</div>
+   <div class="it"><div class="h">2 conflicts<span class="k" style="font-size:10px;padding:0 5px;border-radius:3px;background:var(--badBg);color:var(--bad)">blocks merge</span></div><div class="src">from git status after Update Project · ports.rs, service.rs · items OrderRepo::save, ship()</div><div class="l"><button class="sm primary">Resolve myself</button><button class="sm">Resolve with Yokohama</button><button class="sm quiet">Abort update</button></div><div class="src" style="margin-top:4px">manual is first on your branches; "with Yokohama" comes first on branches a session owns. A setting flips the default.</div></div>
+   <div class="ord">2 · waiting on you</div><div class="it"><div class="h">Yokohama asks<span class="k" style="font-size:10px;padding:0 5px;border-radius:3px;background:var(--sugBg);color:var(--sug)">waiting</span></div><div class="src">from the session · "should a failed notification block the shipment?"</div><div class="l"><button class="sm primary">Answer</button></div></div>
+   <div class="ord">3 · housekeeping</div><div class="it"><div class="h">1 uncommitted</div><div class="src">from the working tree · service.rs · a fix you applied</div><div class="l"><button class="sm primary">Commit</button><button class="sm">Rollback</button></div></div>
+   <div class="it"><div class="h">3 to push</div><div class="src">from the remote · CI hasn't seen them</div><div class="l"><button class="sm primary">Push</button></div></div>
+   <div class="it" style="opacity:.6"><div class="h">then: Create MR</div><div class="src">when the above are clear · the description is drafted from the plan</div></div></div>`;
+  $('status').innerHTML=`<span>Findings 0</span><span>Rules 3</span><span style="color:var(--bad)">4 actions</span><span class="r">Map paused · rebasing</span>`;
+  $('note').innerHTML=`<b>6 · Actions.</b> Every problem the app knows about becomes one chip with its links, ordered by importance: what blocks the merge, then what waits on you, then housekeeping; the strip shows the first three, the right pane all of them under those three headings, with where each comes from. Filters at the top: by importance, or by source (git, agent, findings, review, pipeline). Nothing here is a dialog; every chip is a door, and every door has a manual and an agent side.`;
+ }
+ if(k==='agent'){
+  fr.classList.add('live');$('cur').innerHTML='<span class="dotl"></span> feat/notify-ship <span style="color:var(--mute)">▾</span>';
+  $('strip').innerHTML=`<span style="color:var(--ink2)">feat/notify-ship</span>`+ACT([{k:'v',t:'Yokohama resolving 2 conflicts',a:['watch','pause','take over']},{k:'b',t:'to push · 3',a:['Push']}]);
+  $('left').innerHTML=files({})+band('live','Yokohama','resolving conflicts · 1 of 2','conflicts · 1',[['conflicts · 1','r'],['to push · 3','b']]);
+  $('map').innerHTML=gtabs('map')+mapv({sel:'repo',focus:true,lit:['pay','close','pg']});
+  $('right').innerHTML=`<div class="hd" style="border-top:3px solid var(--yk)"><b style="color:var(--yk)">Yokohama</b><span>claude-code · resolving</span><span class="r">stop · take over</span></div><div class="chat"><div class="msgs"><div class="msg me">Resolve the 2 conflicts from updating on main. Intended behaviour: save() takes the ship event and returns the row id; ship() keeps the notifier call after save.</div><div class="msg ag yk"><div class="who">Yokohama</div>ports.rs: main added a return value, this branch added a parameter; keeping both. Updating PgOrderRepo and the three callers.<div class="tool">▸ arch.why OrderRepo::save → pay, close, ship, PgOrderRepo</div></div><div class="msg ag yk"><div class="who">Yokohama</div>service.rs: kept both edits, notifier call stays after save. Re-checking and running tests.<div class="tool">▸ arch.check → 0 findings · cargo test → 41 passed</div></div><div class="msg ag yk"><div class="who">Yokohama</div>Committed "resolve update from main: save returns RowId, takes ShipEvent". Ready for your review.</div></div><div class="cin"><input placeholder="Reply to Yokohama…"><button class="sm primary">Send</button></div></div>`;
+  $('status').innerHTML=`<span>Findings 0</span><span>Rules 3</span><span class="r">Map up to date · just now</span>`;
+  $('note').innerHTML=`<b>7b · Agent resolves.</b> "Resolve with Yokohama" sends the conflict context and the intended behaviour (from the plan) to the branch's session, the way Conductor's /resolve-merge-conflicts does. The right pane carries the session's own colour (top edge, name, message borders), the same violet as its dot and frame. It uses Reach to update every caller, re-checks, runs the tests, commits, and hands back.<br><br><b>Under the hood.</b> arch builds a resolution task: the conflict hunks with both sides, the items they belong to and their dependents (from Reach), and the intended behaviour taken from the plan elements those items realize. The driver sends it to the session with the arch tools; the agent edits the files, stages them, continues the rebase, runs check and tests, and commits. arch records a resolution: conflict hunk → resolving commit → who. That record is what 8 reads to flag hunks, and what "take over" hands to 7a. On a branch without a session, "with an agent" spawns one for this task only. "Take over" pauses it and opens the manual focus with whatever it resolved so far.`;
+ }
+ if(k==='rev'){
+  $('cur').innerHTML='<span class="dot" style="background:var(--ok)"></span> feat/notify-ship <span style="color:var(--mute)">▾</span>';
+  $('strip').innerHTML=`<span style="color:var(--ink2)">feat/notify-ship</span>`+ACT([{k:'a',t:'resolution to review',a:['Review','accept']},{k:'b',t:'to push · 4',a:['Push']}]);
+  $('left').innerHTML=`<div class="rvl"><div class="back">‹ Agents <b>feat/notify-ship</b></div><h6>commit · resolve update from main</h6><div class="f on">domain/ports.rs<span class="b">was conflict</span></div><div class="f">api/service.rs<span class="b">was conflict</span></div><div class="f">store/pg.rs</div><div class="f">tests/lifecycle.rs</div></div>`+band('','nobody','idle','to push · 4',[['clean'],['current with main'],['to push · 4','b']]);
+  $('map').innerHTML=`<div class="tabbar"><span class="t pin">Map</span><span class="t on">Review · resolution <span class="x">✕</span></span><span class="sp"></span><span class="r">filter: 1 commit · j k hunk · v viewed</span></div><div style="padding:6px 0"><div class="hk2"><div class="hh">ports.rs:6 · OrderRepo::save<span class="sg">was conflict · kept both</span></div><div class="l d">-  async fn save(&amp;self, o: &amp;Order) -&gt; Result&lt;(), StoreError&gt;;</div><div class="l a">+  async fn save(&amp;self, o: &amp;Order, ev: ShipEvent) -&gt; Result&lt;RowId, StoreError&gt;;</div></div><div class="hk2"><div class="hh">pg.rs:14 · PgOrderRepo::save<span class="sg g">follows</span></div><div class="l a">+  async fn save(&amp;self, o: &amp;Order, ev: ShipEvent) -&gt; Result&lt;RowId, StoreError&gt; {</div></div><div class="hk2"><div class="hh">service.rs:15 · ship()<span class="sg">was conflict · kept both</span></div><div class="l a">+  let id = self.repo.save(&amp;order, ev.clone()).await?;</div><div class="l a">+  self.notifier.shipped(ev).await?;</div></div><div style="padding:4px 12px;font-size:11.5px;color:var(--ink2)">"Send back to Yokohama…" on any hunk opens a small composer with the hunk attached; it lands in Yokohama's thread as a task</div></div><div class="rq"><div class="t">Send back to Yokohama<span class="to">wire ship() · 1 hunk</span></div><div class="b"><div class="att">service.rs:15 · ship() · attached</div><textarea>Don't clone the event; pass a reference and let the notifier own the copy.</textarea><div style="font-size:11px;color:var(--mute);margin-top:4px">Yokohama reworks this hunk, re-checks, commits; it comes back here to review.</div></div><div class="ft"><button class="sm primary">Send back</button><button class="sm quiet">Cancel</button><span class="k">⌘↩</span></div></div>`;
+  $('right').innerHTML=`<div class="mini"><div class="ph"><b>map</b> · who felt the resolution<span>open Map tab ↗</span></div><div style="font-size:12px;color:var(--ink2)">OrderRepo::save changed shape; pay(), close(), ship() and PgOrderRepo were updated in the same commit. No new findings; 41 tests green.</div><div style="margin-top:10px;display:flex;gap:6px"><button class="sm primary">Accept</button><button class="sm">Send back to Yokohama…</button><button class="sm">Change it myself</button></div></div>`;
+  $('status').innerHTML=`<span>Findings 0</span><span>Rules 3</span><span class="r">Map up to date · just now</span>`;
+  $('note').innerHTML=`<b>8 · Review the resolution.</b> The action becomes "resolution to review": the Review tab opens filtered to the resolution commit, the hunks that were conflicts flagged, the hunks that merely followed marked as such, the map summarising who felt it. Whoever resolved (7 or 8), this is where it ends. Three verbs: <b style="font-weight:500">Accept</b>, <b style="font-weight:500">Send back to Yokohama…</b> (your notes and the hunk go to the session, it reworks, it comes back here), or <b style="font-weight:500">Change it myself</b> (opens 8 on this hunk). The resolution record says who did what, per hunk.`;
+ }
+ if(k==='tool'){
+  document.querySelector('.shell').classList.add('focus');fr.classList.add('red');
+  $('cur').innerHTML='<span class="dot" style="background:var(--bad)"></span> feat/notify-ship <span class="modelbl" style="background:var(--badBg);color:var(--bad)">resolving</span>';
+  $('strip').innerHTML=`<span style="color:var(--bad)">Resolve myself · update from main · 1 of 2 done</span><div class="r"><button class="sm">Abort update</button><button class="sm primary" disabled style="opacity:.5">Continue update</button><span style="color:var(--mute);font-size:11px;align-self:center">Esc leaves, nothing is lost</span></div>`;
+  $('left').innerHTML=`<div class="cl2"><h6>conflicts<span>1 of 2</span></h6><div class="c on"><span class="dot" style="background:var(--bad)"></span><span class="f">domain/ports.rs</span><span class="it">OrderRepo::save · both sides changed</span><span class="st o">open · proposal ready</span></div><div class="c"><span class="dot" style="background:var(--ok)"></span><span class="f">api/service.rs</span><span class="it">ship() · both sides changed</span><span class="st d">resolved · kept both</span></div><h6 style="margin-top:14px">what changed on main<span>3</span></h6><div class="c"><span class="dot" style="background:var(--ok)"></span><span class="f">rule added</span><span class="it">domain must not depend on clients</span></div><div class="c"><span class="dot" style="background:var(--ok)"></span><span class="f">save() returns RowId</span><span class="it">ports.rs · this conflict</span></div><div class="c"><span class="dot" style="background:var(--ok)"></span><span class="f">area renamed</span><span class="it">outbound → external</span></div></div>`;
+  $('map').innerHTML=`<div class="tabbar"><span class="t on">Merge · ports.rs · OrderRepo::save</span><span class="sp"></span><span class="r">Ctrl+↓ next conflict · ⌘↩ apply</span></div><div class="m3w"><div style="display:flex;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line2);font-size:11.5px;align-items:center"><span>◀ Yours · feat/notify-ship</span><span style="margin:0 auto">Result</span><span>Theirs · main ▶</span><button class="sm" style="margin-left:12px">Apply non-conflicting</button></div><div class="m3">
+   <div><div class="cap">Yours<span class="n">this branch</span></div><div class="ln">#[async_trait]</div><div class="ln">pub trait OrderRepo {</div><div class="ln y">  async fn save(&amp;self, o: &amp;Order, ev: ShipEvent)<span class="arr r">▶ ✕</span></div><div class="ln y">    -&gt; Result&lt;(), StoreError&gt;;</div><div class="ln">}</div></div>
+   <div><div class="cap">Result<span class="n">arch's proposal, editable</span></div><div class="ln">#[async_trait]</div><div class="ln">pub trait OrderRepo {</div><div class="ln res">  async fn save(&amp;self, o: &amp;Order, ev: ShipEvent)</div><div class="ln res">    -&gt; Result&lt;RowId, StoreError&gt;;</div><div class="ln">}</div></div>
+   <div><div class="cap">Theirs<span class="n">main</span></div><div class="ln">#[async_trait]</div><div class="ln">pub trait OrderRepo {</div><div class="ln t"><span class="arr l">✕ ◀</span>  async fn save(&amp;self, o: &amp;Order)</div><div class="ln t">    -&gt; Result&lt;RowId, StoreError&gt;;</div><div class="ln">}</div></div>
+  </div></div>`;
+  $('right').innerHTML=`<div class="fx"><h4>OrderRepo::save</h4><div class="box p"><b>Proposal · keep both</b><p>main added a return value, this branch added a parameter; they're independent. PgOrderRepo and the three callers are updated with it.</p><p style="color:var(--ok)">check green · tests 41 green on the merged tree</p></div><div class="box"><b>Who feels this</b><div class="who">pay() · service.rs:61<br>close() · service.rs:88<br>ship() · service.rs:14<br>PgOrderRepo · pg.rs:14</div></div><div class="box"><b>Ask</b><p>"why did main change the return type?" → answered from main's commit and its plan.</p></div><div class="acts"><button class="sm primary">Accept proposal · next conflict</button><button class="sm">Keep Yours only</button><button class="sm">Keep Theirs only</button><button class="sm quiet">Edit the result by hand</button></div></div>`;
+  $('status').innerHTML=`<span>Findings 0</span><span>Rules 3</span><span style="color:var(--bad)">resolving · 1 of 2</span><span class="r">Map paused</span>`;
+  $('note').innerHTML=`<b>7a · Resolve myself.</b> The manual path, complete without any agent. Same resolution record underneath as 7b: conflicts left → your edits in the Result → the resolving commit, with you as author. "Take over" from 7b lands here with the agent's finished files already staged and only the remaining conflicts listed. "Change it myself" from 8 lands here too, on the flagged hunk. Continue update commits and goes to 8. The proposal in the Result is optional; it's the model's merged version, checked and tested before it's shown, and you can ignore it. One screen with everything: the list of conflicts with their state and what changed on main (left), the three-way tool with arch's proposal already in the result (center), and the proposal's rationale, who feels it, an Ask, and the four choices (right). Accept moves to the next; Continue update enables when all are done; Abort returns to before the update. Esc leaves the focus without losing anything.`;
+ }
+}
+render();window.addEventListener('resize',()=>requestAnimationFrame(drawEdges));
+</script></body></html>

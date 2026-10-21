@@ -15,13 +15,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # The fixture submodules (fixtures/repos/) stay pinned gitlinks: nothing here builds them,
+          # and zed is huge. fixtures/checks/tests/golden.rs reads `git log -- fixtures/repos/<repo>/`,
+          # which a shallow clone cannot answer.
+          submodules: false
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           # rust-src: rust-analyzer resolves std from its sources (arch-analyze, ADR 0010).
           components: rustfmt, clippy, rust-src
       - uses: Swatinem/rust-cache@v2
-      - run: scripts/fetch-fixtures.sh
+      - name: fixture pins are recorded
+        run: git submodule status | tee /dev/stderr | awk '{ if (length($1) < 40) exit 1 }'
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets
       - run: cargo test --workspace
@@ -38,9 +43,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: budgets
-      - run: scripts/fetch-fixtures.sh
-      # The budgets are stated for the reference machine, which arch-fixtures names in
-      # budgets.toml (its issue 5). A shared runner has a quarter of a laptop's cores, so it
+      # The budgets are stated for the reference machine, which fixtures/checks/budgets.toml
+      # names (tau-rs/arch-fixtures#5). A shared runner has a quarter of a laptop's cores, so it
       # declares a factor of 2 until that file exists.
       - run: cargo bench -p arch-analyze --bench budgets
         env:
@@ -66,7 +70,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: same-inputs
-      - run: scripts/fetch-fixtures.sh
       # Two checkouts at different paths, each with its own target/ and store: same facts.
       - run: cargo test --release -p arch-analyze --test same_inputs -- --ignored
         env:
@@ -114,6 +117,22 @@ jobs:
           name: zero2prod-check
           path: ${{ runner.temp }}/zero2prod-check.json
           if-no-files-found: ignore
+
+  smallsvc:
+    name: "smallsvc: the in-tree fixture service builds and passes"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fixtures/repos/smallsvc
+      - run: cargo test --locked
+        working-directory: fixtures/repos/smallsvc
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: fixtures/repos/smallsvc
 
   dependency-direction:
     name: dependency direction (arrows go one way)

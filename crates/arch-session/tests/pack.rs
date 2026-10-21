@@ -1,6 +1,6 @@
 //! The context pack on the sample service (#47, Done when: "a context-pack snapshot on the
 //! smallsvc fixture facts"): the pinned golden facts (`golden/smallsvc/facts.json`) and
-//! smallsvc's own `.arch/`, from the arch-fixtures checkout (`scripts/fetch-fixtures.sh`).
+//! smallsvc's own `.arch/`, from `fixtures/` in this tree.
 //!
 //! The snapshots under `tests/snapshots/` are the pack as an agent reads it;
 //! `ARCH_UPDATE_SNAPSHOT=1 cargo test -p arch-session --test pack` rewrites them.
@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use arch_facts::{ArchDir, ElementId, Facts, Gate, Group, Plan, SessionId};
 
 fn fixtures() -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/arch-fixtures");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
     assert!(
         dir.join("golden/smallsvc/facts.json").is_file(),
-        "{} has no golden/smallsvc/facts.json: run scripts/fetch-fixtures.sh",
+        "{} has no golden/smallsvc/facts.json",
         dir.display()
     );
     dir

@@ -1,4 +1,4 @@
-//! A scratch copy of the sample service from the pinned arch-fixtures checkout.
+//! A scratch copy of the sample service from `fixtures/repos/smallsvc`.
 #![allow(dead_code)] // each test binary uses its own subset
 
 use std::path::{Path, PathBuf};
@@ -8,12 +8,12 @@ pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// Copy `fixtures/arch-fixtures/repos/smallsvc` into a temp dir (without `target/`).
+/// Copy `fixtures/repos/smallsvc` into a temp dir (without `target/`).
 pub fn smallsvc_copy() -> tempfile::TempDir {
-    let src = repo_root().join("fixtures/arch-fixtures/repos/smallsvc");
+    let src = repo_root().join("fixtures/repos/smallsvc");
     assert!(
         src.join("Cargo.toml").is_file(),
-        "{} is missing: run scripts/fetch-fixtures.sh",
+        "{} is missing",
         src.display()
     );
     let dir = tempfile::tempdir().unwrap();

@@ -1,0 +1,30 @@
+[package]
+name = "orderly"
+version = "0.1.0"
+edition = "2021"
+description = "smallsvc: a ~130-item order service written to exercise arch's V1 flows (place · pay · ship · notify)"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Standalone: this crate is analyzed on its own, not as a member of the fixtures workspace.
+[workspace]
+
+[[bin]]
+name = "orderly"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.7"
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync"] }
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }

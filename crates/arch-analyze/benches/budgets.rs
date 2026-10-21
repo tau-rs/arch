@@ -8,7 +8,7 @@
 //! | `recompute_new_file` | < 500 ms | a new module file and the `mod` line reaching it; same span |
 //! | `reload_after_manifest` | < 5 s | `Cargo.toml` saved: rust-analyzer loads again (#60), held to the first index's budget; same span, to resolved facts with nothing degraded |
 //!
-//! Runs on a copy of `repos/smallsvc` from the fixtures pin (`scripts/fetch-fixtures.sh`), with
+//! Runs on a copy of `fixtures/repos/smallsvc`, with
 //! `CARGO_TARGET_DIR` pointing at a directory this benchmark builds once, outside the timing.
 //!
 //! ```text
@@ -98,12 +98,9 @@ fn new_fn(name: &'static str) -> impl Fn(&Facts) -> bool {
 
 fn main() -> ExitCode {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let fixture = manifest.join("../../fixtures/arch-fixtures/repos/smallsvc");
+    let fixture = manifest.join("../../fixtures/repos/smallsvc");
     if !fixture.join("Cargo.toml").is_file() {
-        eprintln!(
-            "{} is missing: run scripts/fetch-fixtures.sh",
-            fixture.display()
-        );
+        eprintln!("{} is missing", fixture.display());
         return ExitCode::FAILURE;
     }
     let tmp = tempfile::tempdir().unwrap();

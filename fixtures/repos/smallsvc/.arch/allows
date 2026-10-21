@@ -1,0 +1,8 @@
+# Allowed sites, keyed by site, person-only (spec §7).
+
+[[allow]]
+site = "src/app/notify.rs::NotifyCustomer::deliver"
+rule = "domain must not depend-on driven"
+target = "src/adapters/email/mod.rs::LogNotifier"
+by = "titouan"
+reason = "log fallback while the mail provider is unreliable; remove when the retry policy lands"

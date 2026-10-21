@@ -12,11 +12,10 @@ fn arch(args: &[&str], dir: &Path) -> Output {
 }
 
 fn smallsvc() -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/arch-fixtures/repos/smallsvc");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/repos/smallsvc");
     assert!(
         dir.join("Cargo.toml").is_file(),
-        "{} is missing: run scripts/fetch-fixtures.sh",
+        "{} is missing",
         dir.display()
     );
     dir

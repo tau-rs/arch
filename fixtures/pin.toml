@@ -1,9 +1,6 @@
 # Pinned pointers to repositories arch is tested against (HANDOFF §1, §5).
-# Bump deliberately; a golden-fact change is reviewed in arch-fixtures first, then pinned here.
-
-[arch-fixtures]
-repo = "https://github.com/tau-rs/arch-fixtures"
-commit = "aa5f6d0ec663b1b73dd0e4e4717df977af5d79e1"   # main, 2026-10-04: smallsvc golden analysed for its pinned target, schema_version 1 (its PR #25)
+# The fixture repos (fixtures/repos/) are submodules or in-tree; the golden files under
+# fixtures/golden/ are reviewed in the same PR as the engine change that moves them.
 
 [repos.zero2prod]
 repo = "https://github.com/LukeMathWalker/zero-to-production"

@@ -1,0 +1,14 @@
+{
+  "repo": "ripgrep",
+  "commit": "e89fff89ac9af12e8d4ce9d5fd07beb408ca730f",
+  "measured_at": "2026-10-02",
+  "measured_by": "tools/measure-sizes.sh",
+  "crates": 10,
+  "rust_files": 100,
+  "rust_lines": 53025,
+  "decls": 3306,
+  "decls_by_kind": { "fn": 2694, "struct": 283, "enum": 68, "trait": 7, "type": 45, "const": 61, "static": 14, "mod": 107 },
+  "items": null,
+  "links": null,
+  "notes": "crates from cargo metadata --no-deps; decls is a syntactic upper bound on items (see script header; fn includes methods); items and links are filled by arch-analyze; smallsvc is in-tree so its commit is this repo's"
+}
