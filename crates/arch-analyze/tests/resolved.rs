@@ -504,26 +504,140 @@ fn a_reload_that_fails_degrades_with_the_reason_and_the_next_manifest_fix_recove
     );
 }
 
+/// The links out of the modules under `demo::gone`, by from, kind and to.
+fn links_out_of_gone(facts: &Facts) -> Vec<(String, LinkKind, Target, Confidence)> {
+    let mut out: Vec<_> = facts
+        .links
+        .iter()
+        .filter(|l| l.from.starts_with("demo::gone::"))
+        .map(|l| (l.from.clone(), l.kind, l.to.clone(), l.confidence))
+        .collect();
+    out.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+    out
+}
+
 #[test]
-fn a_file_rust_analyzer_has_no_module_for_keeps_guessed_links_and_degrades_its_crate() {
+fn a_module_a_cfg_switches_off_has_the_facts_it_would_have_written_inline() {
+    // #77: rust-analyzer resolves nothing in a module switched off for the platform it analyses
+    // (ADR 0030). In its own file that module is not a reason to degrade the crate: it gets
+    // what the same code written inline gets, and the rest of the crate stays type-checked.
     let tmp = tempfile::tempdir().unwrap();
     let (mut analyzer, mut store) = opened_lib(tmp.path());
 
-    // The syntax-level walk follows a module a `cfg` compiles out; rust-analyzer has none.
+    let own_file = save(
+        &mut analyzer,
+        &mut store,
+        tmp.path(),
+        &[
+            (
+                "src/gone.rs",
+                "pub mod sub;\npub fn two() { crate::one() }\n",
+            ),
+            ("src/gone/sub.rs", "pub fn three() { crate::one() }\n"),
+            (
+                "src/lib.rs",
+                "#[cfg(any())]\npub mod gone;\npub fn one() {}\npub fn four() { one() }\n",
+            ),
+        ],
+    );
+    assert!(
+        own_file.analyzer.degraded.is_empty(),
+        "{:?}",
+        own_file.analyzer.degraded
+    );
+    assert_eq!(
+        confidence(&own_file, "demo::four#fn", "demo::one#fn"),
+        Some(Confidence::Resolved)
+    );
+    assert!(
+        own_file
+            .items
+            .iter()
+            .any(|i| i.id == "demo::gone::sub::three#fn"),
+        "a switched-off module is still on the map"
+    );
+    assert_eq!(
+        confidence(&own_file, "demo::gone::two#fn", "demo::one#fn"),
+        None
+    );
+    assert_eq!(
+        confidence(&own_file, "demo::gone::sub::three#fn", "demo::one#fn"),
+        None
+    );
+
+    let inline = save(
+        &mut analyzer,
+        &mut store,
+        tmp.path(),
+        &[(
+            "src/lib.rs",
+            "#[cfg(any())]\npub mod gone {\n    pub mod sub {\n        pub fn three() { crate::one() }\n    }\n    pub fn two() { crate::one() }\n}\npub fn one() {}\npub fn four() { one() }\n",
+        )],
+    );
+    assert!(inline.analyzer.degraded.is_empty());
+    assert_eq!(links_out_of_gone(&own_file), links_out_of_gone(&inline));
+}
+
+#[test]
+fn code_a_cfg_switches_off_inline_gets_no_name_links() {
+    // #96: rust-analyzer has no definition for a switched-off item and would resolve its names
+    // from the module around it: `helper()` in `gone` would be the crate root's `helper`.
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut analyzer, mut store) = opened_lib(tmp.path());
+
+    let facts = save(
+        &mut analyzer,
+        &mut store,
+        tmp.path(),
+        &[(
+            "src/lib.rs",
+            "#[cfg(any())]\npub mod gone {\n    fn helper() {}\n    pub fn two() { helper(); super::one() }\n}\n#[cfg(all())]\npub mod live {\n    fn helper() {}\n    pub fn two() { helper(); super::one() }\n}\npub fn helper() {}\npub fn one() {}\n",
+        )],
+    );
+    let out_of = |from: &str| -> Vec<(&str, Confidence)> {
+        let mut v: Vec<_> = facts
+            .links
+            .iter()
+            .filter(|l| l.from == from && l.kind == LinkKind::Calls)
+            .filter_map(|l| match &l.to {
+                Target::Item(to) => Some((to.as_str(), l.confidence)),
+                _ => None,
+            })
+            .collect();
+        v.sort_by_key(|(to, _)| *to);
+        v
+    };
+    assert_eq!(out_of("demo::gone::two#fn"), []);
+    assert_eq!(
+        out_of("demo::live::two#fn"),
+        [
+            ("demo::live::helper#fn", Confidence::Resolved),
+            ("demo::one#fn", Confidence::Resolved)
+        ]
+    );
+}
+
+#[test]
+fn a_file_rust_analyzer_cannot_take_keeps_guessed_links_and_degrades_its_crate() {
+    // No `cfg` switches `x` off, yet rust-analyzer has no module for the file the walker read:
+    // it looks for `src/inner/x.rs` (#94). The crate is not fully type-checked, and says so.
+    let tmp = tempfile::tempdir().unwrap();
+    let (mut analyzer, mut store) = opened_lib(tmp.path());
+
     let facts = save(
         &mut analyzer,
         &mut store,
         tmp.path(),
         &[
-            ("src/gone.rs", "pub fn two() { crate::one() }\n"),
+            ("src/x.rs", "pub fn two() { crate::one() }\n"),
             (
                 "src/lib.rs",
-                "#[cfg(any())]\npub mod gone;\npub fn one() {}\n",
+                "pub mod inner {\n    #[path = \"x.rs\"]\n    pub mod x;\n}\npub fn one() {}\n",
             ),
         ],
     );
     assert_eq!(
-        confidence(&facts, "demo::gone::two#fn", "demo::one#fn"),
+        confidence(&facts, "demo::inner::x::two#fn", "demo::one#fn"),
         Some(Confidence::Guessed)
     );
     let reasons: Vec<(&str, &str)> = facts
@@ -536,7 +650,7 @@ fn a_file_rust_analyzer_has_no_module_for_keeps_guessed_links_and_degrades_its_c
         reasons,
         [(
             "demo",
-            "rust-analyzer has no module for src/gone.rs: links guessed"
+            "rust-analyzer has no module for src/x.rs: links guessed"
         )]
     );
 }
