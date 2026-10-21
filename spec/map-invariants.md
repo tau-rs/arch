@@ -1,6 +1,6 @@
-# Map invariants · MAP-1…32, CANVAS-1…2
+# Map invariants · MAP-1…33, CANVAS-1…2
 
-The contract the map keeps for every flow, as testable statements, one owner and one check each. Answers arch-fixtures FINDINGS.md F-1 and F-9 (tau-rs/arch-design#8, #13). Sources: `flows/map-focus.html` (MAP-1…28), `flows/map-real-projects.html` (MAP-25…29), `handoffs/handoff-visualizer-poc.md` (MAP-30, 31, CANVAS-1, 2), `handoffs/handoff-sett-rebase.md` (MAP-32), spec §5 for every amendment. Spec §5 wins over a page where they differ.
+The contract the map keeps for every flow, as testable statements, one owner and one check each. Answers arch-fixtures FINDINGS.md F-1 and F-9 (tau-rs/arch-design#8, #13). Sources: `flows/map-focus.html` (MAP-1…28), `flows/map-real-projects.html` (MAP-25…29), `handoffs/handoff-visualizer-poc.md` (MAP-30, 31, CANVAS-1, 2), `handoffs/handoff-sett-rebase.md` (MAP-32), [ADR 0037](../adr/0037-open-area-rows.md) (MAP-33), spec §5 for every amendment. Spec §5 wins over a page where they differ.
 
 **Owners.** *fixtures*: checkable from a golden facts/views pair; the check is a function in `arch-fixtures/checks/invariants.rs` (names in the table; existing ones are marked). *app* / *sett*: a story test in `arch-app` or `sett`, run against `fixtures-for-ui/`; the table says what the story asserts. *V2*: holds vacuously in V1 (one unit, no profiles); the check exists where it is cheap and bites in V2. *dropped* / *superseded*: kept in the numbering, never checked.
 
@@ -40,6 +40,7 @@ The contract the map keeps for every flow, as testable statements, one owner and
 | MAP-30 | Cross-unit links land on public surfaces; a link into a non-pub item of another unit is a finding. | V2 (vacuous with one unit) | V2 | `cross_unit_on_public_surface` (exists; vacuous in V1) |
 | MAP-31 | Externals live at the interface tier only: every external is a port of kind rpc · http · cli · topic · crate · sql · pub · redis · fs · tty · declared on the unit's flat sides, in the fixed section order platform services · third-party · events · data stores · os · libraries · unresolved; there is no outbound column. | as is | fixtures | `externals_on_rails` |
 | MAP-32 | Edges dock to ports and detour rather than move anything; a neighbour's matching port is wired straight; the rail ends with an unresolved section. | as is | fixtures (docking moves no position); sett (the rail with its unresolved section) | `rail_docking_moves_nothing`; story: `sett-rail` with the unresolved section |
+| MAP-33 | An open area draws one row per top-level item: an `impl` block folds into its type's row when the type is in the same area (`Item.self_type`), an associated item with its `parent`, a `private` item with no `parent` (not a `mod` or `impl`) into its module's row; every row starts closed; a link, finding, overlay or Reach hit on a folded item lands on its row with a count; folded items are not visible items. | new: [ADR 0037](../adr/0037-open-area-rows.md) | fixtures (rows and counts from facts); sett (the folded count); app (open and close) | `rows_fold_into_owner`; story: a row's folded count, opened and closed |
 
 ## CANVAS
 
@@ -50,8 +51,8 @@ The contract the map keeps for every flow, as testable statements, one owner and
 
 ## Checks to add in `arch-fixtures/checks/invariants.rs` (arch-fixtures #5)
 
-`columns_are_sides` · `folded_link_counts` · `reach_depth` · `column_rule_from_entry` · `externals_on_rails` · `rail_docking_moves_nothing` · `ports_from_facts`; and `direction_left_to_right` narrowed to the five directed kinds with the grain read from `rule` (ADR 0025, ADR 0033). Existing and unchanged: `positions_stable` · `no_state_relayout` · `fold_floor` · `overlay_stacking` · `unresolved_one_pill` · `cross_unit_on_public_surface`; `finding_confidence` (ADR 0009) and `origin_is_core` (spec §3) are not MAP numbers and stay.
+`columns_are_sides` · `folded_link_counts` · `reach_depth` · `column_rule_from_entry` · `externals_on_rails` · `rail_docking_moves_nothing` · `ports_from_facts` · `rows_fold_into_owner`; and `direction_left_to_right` narrowed to the five directed kinds with the grain read from `rule` (ADR 0025, ADR 0033). Existing and unchanged: `positions_stable` · `no_state_relayout` · `fold_floor` · `overlay_stacking` · `unresolved_one_pill` · `cross_unit_on_public_surface`; `finding_confidence` (ADR 0009) and `origin_is_core` (spec §3) are not MAP numbers and stay.
 
 ## Story tests to add (arch-app / sett, against `fixtures-for-ui/`)
 
-MAP-4 (label token) · 5 · 9 · 10 · 11 (fade) · 12 · 13 · 14 (paint) · 15 · 16 (dashed amber) · 18 · 19 · 20 · 21 · 22 · 32 (rail) · CANVAS-1. These are the invariants FINDINGS F-9 lists as untestable from facts; each has exactly one check, there.
+MAP-4 (label token) · 5 · 9 · 10 · 11 (fade) · 12 · 13 · 14 (paint) · 15 · 16 (dashed amber) · 18 · 19 · 20 · 21 · 22 · 32 (rail) · 33 (folded count, open and close) · CANVAS-1. These are the invariants FINDINGS F-9 lists as untestable from facts; each has exactly one check, there.

@@ -21,7 +21,7 @@ arch-design/
     arch-v1-spec.md            the V1 specification; §13 holds the decisions of 2 Oct 2026
     vocabulary.md              the terms, with the C4 mapping
     keyboard.md                the keyboard map
-    map-invariants.md          MAP-1…32 and CANVAS-1…2 as testable statements, each with its owner and check
+    map-invariants.md          MAP-1…33 and CANVAS-1…2 as testable statements, each with its owner and check
   flows/                       the HTML pages, one file each, self-contained (open in a browser)
     shell.html                 the shell: one bar, rail, left panel, bottom panel, status bar
     plan-shell.html            plan and delegate, on the shell
@@ -38,7 +38,7 @@ arch-design/
 
 ## ADRs
 
-Synced-to line for the other repos: **ADR 0036** (2026-10-21). Later decisions are added as 0037, 0038, …
+Synced-to line for the other repos: **ADR 0037** (2026-10-21). Later decisions are added as 0038, 0039, …
 
 | # | decision |
 |---|---|
@@ -78,6 +78,7 @@ Synced-to line for the other repos: **ADR 0036** (2026-10-21). Later decisions a
 | [0034](adr/0034-arch-api-wire-contract.md) | arch-api wire contract: `schemas/arch-api.json` (OpenRPC 1.3, `x-arch-events`) pinned by commit; `arch serve` on a per-repo unix socket, one JSON-RPC message per line; `initialize` returns engine and schema versions; the schema version is semver |
 | [0035](adr/0035-what-the-five-lints-check.md) | What the five lints check: `god-module` an area over 40 % of the unit's lines; `cycle` areas that depend on each other, reported on the cheapest cut; `leaky-port` a port's signature naming adapter technology; `speculative-abstraction` a trait with one implementor (a port: and no test implementor); `unresolved-dyn` a port called with no implementor or several and none wired |
 | [0036](adr/0036-engine-binary-name.md) | Engine binary: stays `arch`; a candidate is the engine only if `--version` prints `arch <semver>` first; the packaged app runs its bundled engine before `PATH` |
+| [0037](adr/0037-open-area-rows.md) | Rows in an open area: one per top-level item; `impl` blocks and methods fold into their type's row (`Item.self_type`), `private` loose items into their module's row; rows start closed, open on demand |
 ## Flow pages
 
 | page | what it is |
