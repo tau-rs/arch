@@ -14,7 +14,7 @@
 - [ADR 0006](0006-arch-init.md): `arch init` writes "`areas.toml` with computed sides and order", one commit, no questions. [ADR 0004](0004-areas-derived-no-source-annotation.md): areas derive from the module tree; `areas.toml` holds overrides. [ADR 0027](0027-arch-init-sides-rule.md): the sides rule, its grain (each top-level module, `src/x.rs` or `src/x/`), the one-level split, and "in a layers unit `arch init` writes order only". [ADR 0028](0028-entry-kinds-spawned-worker.md): smallsvc's `src/worker.rs` becomes a driving area `worker`, order guessed as 2.
 - MAP-1, 3, 24 (`spec/map-invariants.md`): positions inside a unit come from facts only and are byte-identical between saves for unchanged items; a recompute touches only changed items.
 - The rail (the unit's flat sides, which hold the ports to external systems) has a fixed section order: platform services · third-party · events · data stores · os · libraries · unresolved (spec §5, MAP-31).
-- #24 first recommended the declaration order of the `mod` lines, then retracted it: rustfmt sorts `mod` lines, so declaration order is alphabetical in practice (true of both fixtures: `src/lib.rs` and `src/adapters/mod.rs` in smallsvc, `src/lib.rs` in zero2prod).
+- tau-rs/arch-design#24 first recommended the declaration order of the `mod` lines, then retracted it: rustfmt sorts `mod` lines, so declaration order is alphabetical in practice (true of both fixtures: `src/lib.rs` and `src/adapters/mod.rs` in smallsvc, `src/lib.rs` in zero2prod).
 - smallsvc's file (`repos/smallsvc/.arch/areas.toml` in arch-fixtures) has driven order postgres 1 · memory 2 · stripe 3 · carrier 4 · email 5, and groups `src/config.rs` under `app` and `migrations/**` under `postgres`.
 
 ### The three candidates against real code
@@ -72,7 +72,7 @@ What `arch init` writes, against the file as it stands after ADR 0028's edit:
 | driven | `postgres` | `src/adapters/postgres/**` | 4 | `src/adapters/postgres/**`, `migrations/**`; 1 | **`order` and `paths` are hand overrides** |
 | driven | `stripe` | `src/adapters/stripe/**` | 5 | same paths; 3 | **`order` is a hand override** |
 
-So the hand overrides in smallsvc's file are seven values: two `paths` (the grouping of `src/config.rs` under `app`, of `migrations/**` under `postgres`) and the five driven `order` values. Everything else is what `arch init` writes, given the `config` grouping. Fixtures either aligns the file to the computed column above, or keeps those seven values and asserts "`arch init` output, plus these seven edits, equals the checked-in file" (arch-fixtures #3).
+So the hand overrides in smallsvc's file are seven values: two `paths` (the grouping of `src/config.rs` under `app`, of `migrations/**` under `postgres`) and the five driven `order` values. Everything else is what `arch init` writes, given the `config` grouping. Fixtures either aligns the file to the computed column above, or keeps those seven values and asserts "`arch init` output, plus these seven edits, equals the checked-in file" (arch-fixtures tau-rs/arch-design#3).
 
 ### Result on zero2prod
 

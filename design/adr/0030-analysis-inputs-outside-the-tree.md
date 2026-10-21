@@ -2,7 +2,7 @@
 
 - Date: 2026-10-03
 - Status: accepted
-- Source: tau-rs/arch-design#96 (found while deciding #21); completes [ADR 0002](0002-keys-commit-hash-deltas.md) "the inputs tau-rs/arch-design#96 pins"
+- Source: tau-rs/arch-design#96 (found while deciding tau-rs/arch-design#21); completes [ADR 0002](0002-keys-commit-hash-deltas.md) "the inputs tau-rs/arch-design#96 pins"
 
 ## In plain words
 
@@ -10,7 +10,7 @@ Two people opening the same commit should see the same map, and the map is drawn
 
 ## Context
 
-- ADR 0002 (#21): a file's facts key is `hash(path · content hash · package id)`; the package id includes "the inputs tau-rs/arch-design#96 pins". Same inputs, same facts.
+- ADR 0002 (tau-rs/arch-design#21): a file's facts key is `hash(path · content hash · package id)`; the package id includes "the inputs tau-rs/arch-design#96 pins". Same inputs, same facts.
 - What tau-rs/arch loads today (`arch-analyze` `ra.rs` `Session::load`, `cargo.rs`): rust-analyzer's default `CargoConfig` with `set_test: true`, so the host triple, the unit's default features and `cfg(test)` on; the sysroot `rustc --print sysroot` gives when run in the repository root, which honours a `rust-toolchain.toml`; build scripts' `OUT_DIR` from `cargo check` (`load_out_dirs_from_check`), reusing `target/` as ADR 0026 requires; proc-macros expanded by the sysroot's proc-macro server.
 - The item walker keeps every `cfg` branch and records its predicate in the item's `flags.cfg`. For the files rust-analyzer loads, guessed links are dropped and only the links rust-analyzer resolves are kept; it resolves nothing in inactive code.
 - `.arch/areas.toml` already carries unit settings: `main_bin` ([ADR 0007](0007-unit-in-v1.md)).

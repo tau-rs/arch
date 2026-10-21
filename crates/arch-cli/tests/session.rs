@@ -36,8 +36,7 @@ const FILES: [&str; 4] = [
 /// smallsvc copied into a fresh git repo whose `origin` is a local bare repository; plans of `n`
 /// elements.
 fn world(n: usize) -> World {
-    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/arch-fixtures/repos/smallsvc");
+    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/repos/smallsvc");
     assert!(
         src.join("Cargo.toml").is_file(),
         "{} is missing: run scripts/fetch-fixtures.sh",

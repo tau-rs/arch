@@ -8,9 +8,9 @@ pub fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// Copy `fixtures/arch-fixtures/repos/smallsvc` into a temp dir (without `target/`).
+/// Copy `fixtures/repos/smallsvc` into a temp dir (without `target/`).
 pub fn smallsvc_copy() -> tempfile::TempDir {
-    let src = repo_root().join("fixtures/arch-fixtures/repos/smallsvc");
+    let src = repo_root().join("fixtures/repos/smallsvc");
     assert!(
         src.join("Cargo.toml").is_file(),
         "{} is missing: run scripts/fetch-fixtures.sh",

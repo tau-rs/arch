@@ -27,7 +27,7 @@ A budget is a number the product promises to stay under, checked by one benchmar
 | pan/zoom | 60 fps at 5,000 visible items | unchanged | `pan_zoom_fps` | `arch-app` |
 
 - **Which fixture.** A budget is a ceiling at its stated size; a smaller repo must meet it too. `first_index_cold` runs on every pin; the 1,200-item line is read against the fixture whose measured `items` is nearest 1,200 once arch-analyze fills `sizes.json` (expected: ripgrep's main unit). `memory_rss_peak` at 5,000 visible items runs on the zed pin, the only fixture above 5,000 items (V1 asserts facts for three lib roots only; the whole workspace exists for perf runs, per the fixtures handoff).
-- **Reference machine.** Named once in `budgets.toml` by fixtures (arch-fixtures #5); the numbers hold there, and a developer laptop is faster, never slower.
+- **Reference machine.** Named once in `budgets.toml` by fixtures (arch-fixtures tau-rs/arch-design#5); the numbers hold there, and a developer laptop is faster, never slower.
 - **Supersedes** handoff-arch.md's "first index of zero2prod < 10 s": zero2prod runs the same `first_index_cold` benchmark under the 5 s ceiling.
 
 ## Consequences

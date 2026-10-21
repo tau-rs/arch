@@ -2,7 +2,7 @@
 
 **arch** is a desktop tool for Rust codebases, built as an Eclipse Theia product, in which a person and coding agents work on a repository through its architecture map. arch computes the map from rust-analyzer facts, keeps its own notes under `.arch/`, writes nothing into source, and lets you plan a change, delegate it to a session, follow it, review it and merge it, with the manual path always present. The full statement is `spec/arch-v1-spec.md` §1.
 
-This repo is **the record**: the one place where the product's decisions live, with a git history. Every other repo links to it; none depends on it at build time.
+This directory is **the record**: the one place where the product's decisions live, with a git history. Every other repo links to it; none depends on it at build time. It was the repo `tau-rs/arch-design` until 2026-10-21 (tau-rs/arch#100); its issues moved to `tau-rs/arch`, and `tau-rs/arch-design#NNN` links redirect there.
 
 ## Rules
 
@@ -14,7 +14,7 @@ This repo is **the record**: the one place where the product's decisions live, w
 ## Repo map
 
 ```
-arch-design/
+design/
   README.md                    this page
   roadmap.md                   V1 · V2 · V3 (spec §3), kept current
   spec/
@@ -95,7 +95,7 @@ Synced-to line for the other repos: **ADR 0037** (2026-10-21). Later decisions a
 | [handoff-arch-design.md](handoffs/handoff-arch-design.md) | this repo |
 | [handoff-arch.md](handoffs/handoff-arch.md) | `tau-rs/arch`, the engine |
 | [handoff-arch-app.md](handoffs/handoff-arch-app.md) | `tau-rs/arch-app`, the Theia product |
-| [handoff-arch-fixtures.md](handoffs/handoff-arch-fixtures.md) | `tau-rs/arch-fixtures`, test data and invariants |
+| [handoff-arch-fixtures.md](handoffs/handoff-arch-fixtures.md) | `fixtures/`, test data and invariants (was `tau-rs/arch-fixtures`) |
 | [handoff-sett-rebase.md](handoffs/handoff-sett-rebase.md) | `tau-rs/sett`, the design system: rebase on the retained shell |
 | [handoff-design-system.md](handoffs/handoff-design-system.md) | the design-system side-work (done; sett exists) |
 | [handoff-plugin-system.md](handoffs/handoff-plugin-system.md) · [handoff-plugin-system-spec.md](handoffs/handoff-plugin-system-spec.md) | the plugin system side-work (designed; V2) |
@@ -105,10 +105,10 @@ Synced-to line for the other repos: **ADR 0037** (2026-10-21). Later decisions a
 
 | repo | is | states |
 |---|---|---|
-| [`tau-rs/arch`](https://github.com/tau-rs/arch) | the engine: facts, views, server, tool layer, drivers, forge; one Cargo workspace | the ADR it is synced to |
+| [`tau-rs/arch`](https://github.com/tau-rs/arch) | the engine (`crates/`), this record (`design/`) and the fixtures (`fixtures/`) | same repo: always synced |
 | [`tau-rs/arch-app`](https://github.com/tau-rs/arch-app) | the Theia desktop product, consuming `@tau-rs/sett` | the ADR it is synced to |
 | [`tau-rs/sett`](https://github.com/tau-rs/sett) | the design system: tokens, Lit `sett-*` elements, Storybook; `DESIGN.md` wins on look, the ADRs on behaviour and vocabulary | the ADR it is synced to |
-| [`tau-rs/arch-fixtures`](https://github.com/tau-rs/arch-fixtures) | pinned real repos, golden facts, invariant and performance checks | the ADR it is synced to |
+| `tau-rs/arch` `fixtures/` | pinned real repos, golden facts, invariant and performance checks | same repo: always synced |
 
 ## Sync with the other repos
 

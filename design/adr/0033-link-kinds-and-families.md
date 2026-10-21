@@ -2,7 +2,7 @@
 
 - Date: 2026-10-04
 - Status: accepted
-- Source: tau-rs/arch-design#16 (arch FINDINGS F-3, tau-rs/arch#10), decided by the user on #16 and tau-rs/arch#10 (2026-10-03); completes [ADR 0025](0025-direction-call-family-grain.md) and [ADR 0031](0031-items-and-item-ids.md)
+- Source: tau-rs/arch-design#16 (arch FINDINGS F-3, tau-rs/arch#10), decided by the user on tau-rs/arch-design#16 and tau-rs/arch#10 (2026-10-03); completes [ADR 0025](0025-direction-call-family-grain.md) and [ADR 0031](0031-items-and-item-ids.md)
 
 ## In plain words
 
@@ -61,7 +61,7 @@ The link kinds of schema version 0 are the 22 values of `LinkKind` in `tau-rs/ar
 - **Spelling.** A kind is written as the schema writes it, kebab-case, in facts, schemas, code and checks. Earlier prose spellings (`calls out`, `uses type`, in ADR 0025, ADR 0028 and handoff-arch.md) name the same kinds.
 - **Confidence is per link.** handoff-arch.md §2 says how each kind is usually found (resolved, or guessed from a pattern); every link still carries its own confidence ([ADR 0009](0009-confidence-levels.md)), and the kind does not fix it. In smallsvc, 46 `inherits` (derives) and 14 `decorates` are guessed, 47 of 51 `calls-out` are resolved. When a kind is resolved and when guessed is tau-rs/arch-design#61, not this ADR.
 
-Why (#16, tau-rs/arch#10): the schema list already parses in tau-rs/arch, the merged golden is written in it, and it gives the two relations spec §7 already requires a kind each, so recording it costs no fixture bump.
+Why (tau-rs/arch-design#16, tau-rs/arch#10): the schema list already parses in tau-rs/arch, the merged golden is written in it, and it gives the two relations spec §7 already requires a kind each, so recording it costs no fixture bump.
 
 ## Consequences
 

@@ -14,18 +14,18 @@ use arch_fixtures_checks::{check_all, load_golden, LoadError};
 const BASE: &str = "origin/main";
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 fn golden_dirs() -> Vec<PathBuf> {
-    let mut dirs: Vec<_> = std::fs::read_dir(repo_root().join("golden"))
-        .expect("golden/ exists")
+    let mut dirs: Vec<_> = std::fs::read_dir(repo_root().join("fixtures/golden"))
+        .expect("fixtures/golden/ exists")
         .filter_map(Result::ok)
         .filter(|e| e.path().is_dir())
         .map(|e| e.path())
         .collect();
     dirs.sort();
-    assert!(!dirs.is_empty(), "golden/ has no repo directories");
+    assert!(!dirs.is_empty(), "fixtures/golden/ has no repo directories");
     dirs
 }
 
@@ -74,10 +74,11 @@ enum Verdict {
     Fail(String),
 }
 
-/// An in-repo fixture's golden records, in `repo.commit`, the last commit touching `repos/<repo>/`.
-/// A squash merge's ID is unknown until it lands, so a fixture edit and its golden bump are two PRs
-/// (#11). Only a change that edits `golden/<repo>/` must be exact; elsewhere, including main between
-/// those two merges, a stale value is a warning.
+/// An in-repo fixture's golden records, in `repo.commit`, the last commit touching `fixtures/repos/<repo>/`.
+/// arch lands PRs with merge commits, so the fixture commit a PR records survives the merge and a
+/// fixture edit can carry its own golden bump (the two-PR rule of tau-rs/arch-fixtures#11 was for
+/// squash merges). Only a change that edits `fixtures/golden/<repo>/` must be exact; elsewhere a stale
+/// value is a warning.
 fn judge(
     name: &str,
     recorded: &str,
@@ -85,19 +86,17 @@ fn judge(
     edits_golden: bool,
     edits_fixture: bool,
 ) -> Verdict {
-    if edits_golden && edits_fixture {
-        return Verdict::Fail(format!(
-            "{name}: change edits both repos/{name}/ and golden/{name}/; its squash ID is unknown \
-             until merge, so update the golden in a follow-up PR"
-        ));
-    }
     if recorded == last {
         return Verdict::Current;
     }
     let msg = format!(
-        "{name}: golden repo.commit {recorded} is not the last commit touching repos/{name}/ ({last})"
+        "{name}: golden repo.commit {recorded} is not the last commit touching fixtures/repos/{name}/ ({last})"
     );
-    if edits_golden {
+    if edits_golden && edits_fixture {
+        Verdict::Fail(format!(
+            "{msg}; commit the fixture first, then record that commit in the golden (merge commits keep it)"
+        ))
+    } else if edits_golden {
         Verdict::Fail(msg)
     } else {
         Verdict::Stale(format!("{msg}; bump it in a golden-only PR"))
@@ -133,7 +132,7 @@ fn golden_repo_commit_is_the_last_fixture_commit() {
         let Ok(text) = std::fs::read_to_string(dir.join("facts.json")) else {
             continue;
         };
-        let fixture = format!("repos/{name}");
+        let fixture = format!("fixtures/repos/{name}");
         // Submodules are pinned commits, not trees in this repo; this rule covers in-repo fixtures.
         if !git(&["ls-tree", "HEAD", &fixture]).starts_with("040000 tree ") {
             continue;
@@ -147,7 +146,7 @@ fn golden_repo_commit_is_the_last_fixture_commit() {
             &name,
             recorded,
             &last,
-            edits(&format!("golden/{name}/")),
+            edits(&format!("fixtures/golden/{name}/")),
             edits(&format!("{fixture}/")),
         ) {
             Verdict::Current => {}
@@ -167,5 +166,6 @@ fn judge_is_strict_only_on_golden_edits() {
     assert!(fail(judge("s", "old", "new", true, false)));
     assert!(stale(judge("s", "old", "new", false, false)));
     assert!(stale(judge("s", "old", "new", false, true)));
-    assert!(fail(judge("s", "a", "a", true, true)));
+    assert_eq!(judge("s", "a", "a", true, true), Verdict::Current);
+    assert!(fail(judge("s", "old", "new", true, true)));
 }

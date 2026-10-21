@@ -11,12 +11,13 @@
 #   arch-session  → facts, views, driver, forge
 #   arch-api      → facts, analyze, views, session, forge, driver
 #   arch-cli      → api
+#   arch-fixtures-checks → (nothing of ours: the harness reads facts/views JSON, never the crates)
 set -eu
 cd "$(dirname "$0")/.."
 
 allowed() {
   case "$1" in
-    arch-facts) echo "" ;;
+    arch-facts|arch-fixtures-checks) echo "" ;;
     arch-analyze|arch-views|arch-forge|arch-driver) echo "arch-facts" ;;
     arch-session) echo "arch-facts arch-views arch-driver arch-forge" ;;
     arch-api) echo "arch-facts arch-analyze arch-views arch-session arch-forge arch-driver" ;;

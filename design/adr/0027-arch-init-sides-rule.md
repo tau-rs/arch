@@ -3,7 +3,7 @@
 - Date: 2026-10-03
 - Status: accepted
 - Source: arch-fixtures FINDINGS.md F-6 (tau-rs/arch-design#6); amends [ADR 0006](0006-arch-init.md) "computed sides" and spec §13.6
-- Settled since: tau-rs/arch-design#7 is decided by [ADR 0028](0028-entry-kinds-spawned-worker.md): the worker spawned at start-up is an entry, so `issue_delivery_worker` and smallsvc `src/worker.rs` are **driving**; the "if #7" rows below read that way
+- Settled since: tau-rs/arch-design#7 is decided by [ADR 0028](0028-entry-kinds-spawned-worker.md): the worker spawned at start-up is an entry, so `issue_delivery_worker` and smallsvc `src/worker.rs` are **driving**; the "if tau-rs/arch-design#7" rows below read that way
 - Settled since: tau-rs/arch-design#28 is decided (2026-10-03): logging through a facade (`tracing`, `log`) is a library call, not an I/O external; decision 3 says so and smallsvc `email` is driven through http alone
 - Settled since: tau-rs/arch-design#29 is decided (2026-10-03): the registering end of a `route → handler` link also holds an entry, so the module that mounts the handlers is driving; decision 3 says so, and zero2prod's `startup` is driving by rule
 
@@ -56,7 +56,7 @@ flowchart TD
 |---|---|---|---|
 | `authentication` | no (`reject_anonymous_users` is a middleware) | sql (`password`) | **driven** |
 | `idempotency` | no | sql (`persistence`) | **driven** |
-| `issue_delivery_worker` | only if #7 makes the `main`-spawned loop an entry | sql, and http through `email_client` | **driving** if #7 is accepted as filed; **driven** otherwise |
+| `issue_delivery_worker` | only if tau-rs/arch-design#7 makes the `main`-spawned loop an entry | sql, and http through `email_client` | **driving** if tau-rs/arch-design#7 is accepted as filed; **driven** otherwise |
 
 The rest of zero2prod, for fixtures to confirm against the golden facts when it writes the expected `areas.toml`: `routes` → driving (handlers; no split, every child holds handlers), `startup` → driving (registers the route handlers and runs the actix server: the registering end of a `route → handler` link, decision 3), `email_client` → driven (http), `domain` → domain, `configuration` · `session_state` · `telemetry` · `utils` → domain unless the facts show an I/O external.
 
@@ -71,17 +71,17 @@ The rest of zero2prod, for fixtures to confirm against the golden facts when it 
 | `app` (`src/app/**`) | no entry, no I/O external (`app::notify` naming `LogNotifier` is a dependency, already in `.arch/allows`) | domain | domain |
 | `domain` · `ports` | neither | domain | domain |
 | `src/config.rs` | reads the environment; not an external port kind | domain | domain (listed under `app`) |
-| `src/worker.rs` | reaches the outbox only through `Services` | domain today; **driving** if #7 is accepted as filed | domain (listed under `app`) |
+| `src/worker.rs` | reaches the outbox only through `Services` | domain today; **driving** if tau-rs/arch-design#7 is accepted as filed | domain (listed under `app`) |
 
 Every side in the file is reproduced. Two things in the file are not sides and are not produced by this rule: the grouping of `src/worker.rs` and `src/config.rs` (and `migrations/**`) under another area's `paths`, and the `order` values. Those are overrides in the sense of ADR 0004.
 
 ## Consequences
 
-- `arch init` (tau-rs/arch) implements decisions 1–5; fixtures writes zero2prod's expected `areas.toml` from the table above (arch-fixtures #3).
+- `arch init` (tau-rs/arch) implements decisions 1–5; fixtures writes zero2prod's expected `areas.toml` from the table above (arch-fixtures tau-rs/arch-design#3).
 - Spec §13.6 and ADR 0006 keep their text and gain a reference to this ADR; nothing is renumbered.
 - One honest consequence: on a repo that is not a hexagon the rule still answers, and the template rules then fire on day one. zero2prod's `routes` run SQL themselves ("externals only from driven") and call `authentication` (driving → driven, against the grain of ADR 0025). That is the tool telling the truth about the repo, not a wrong side; it is also the first thing a new user sees.
 - A second honest consequence: **domain is the catch-all.** `telemetry`, `utils`, `configuration` land there because they are neither of the other two, not because they are business logic. The override is the answer; a fourth "support" side is not in V1.
-- A third honest consequence: the side of a worker follows #7, on purpose: the product has one meaning of "entry", and the sides rule has no private one. If the `main`-spawned loop becomes an entry, `issue_delivery_worker` and smallsvc's `worker` both become driving, smallsvc's `areas.toml` changes by one area (`src/worker.rs` leaves `app`), and zero2prod's worker gets the same day-one findings as its routes (SQL outside driven; a call to `email_client` against the grain). If it does not, `issue_delivery_worker` is driven, which reads wrong for the thing that starts the delivery work. Rejected: excluding `main`-spawned entries from clause 1 to keep smallsvc's file fixed.
+- A third honest consequence: the side of a worker follows tau-rs/arch-design#7, on purpose: the product has one meaning of "entry", and the sides rule has no private one. If the `main`-spawned loop becomes an entry, `issue_delivery_worker` and smallsvc's `worker` both become driving, smallsvc's `areas.toml` changes by one area (`src/worker.rs` leaves `app`), and zero2prod's worker gets the same day-one findings as its routes (SQL outside driven; a call to `email_client` against the grain). If it does not, `issue_delivery_worker` is driven, which reads wrong for the thing that starts the delivery work. Rejected: excluding `main`-spawned entries from clause 1 to keep smallsvc's file fixed.
 - A fourth honest consequence: on a repo laid out by feature (`orders/{handlers,repo,model}`), the split gives three areas per feature. More areas, but the alternative is every feature in driving and two empty columns. Rejected: never splitting, which puts all of smallsvc's `adapters` in driving.
 - The analyzer must mark test-only items so the rule can ignore them (tau-rs/arch#21). Rejected: leaving in-memory adapters to a hand override, which makes the reference hexagon need an edit straight after `init`.
 - The sibling clause (decision 3) can misfire when a domain type implements a unit trait that an adapter also implements for a reason other than being a port. Rare; override.

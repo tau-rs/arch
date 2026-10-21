@@ -6,7 +6,7 @@
 
 ## In plain words
 
-An *entry* is a place where the outside world starts the code: `main`, an HTTP handler, a queue consumer. arch needs the list of entries because everything hangs off it: the flows it draws start there, and since ADR 0027 the *side* of a module (driving, domain, driven: the three columns of a hexagon map) is read from whether the module holds one. Today the spec knows two ways to find an entry besides `main`: a table of frameworks (axum, actix, …) and a generic rule for callbacks. Neither sees the most common background job there is: `main` starts a loop on the side with `tokio::spawn` and that loop polls a table forever. Both service fixtures have one (smallsvc's outbox worker, zero2prod's newsletter delivery worker), and today the analyzer shows them as a dashed "hands off" link from `main` and no entry, so smallsvc's notify flow starts nowhere. One analogy: a restaurant has a front door and a delivery hatch at the back; the hatch is not on the list of doors because nobody rings there, the kitchen opened it itself in the morning, yet work comes in through it all day. This ADR adds that hatch as a third entry kind, the **spawned worker**: a function started once at start-up through a spawn call, which then loops for the life of the process. Checking the wording filed in #7 against real code changed it in two places: the loop is often one call below the spawned function (zero2prod's own worker, which the filed wording would have missed), and "awaits a shutdown signal" was dropped because it turns a three-line ctrl-c listener into an entry. Where things stand: with this rule both fixture workers are entries at full confidence, zero2prod's worker module is definitely driving, and smallsvc's `worker.rs` leaves the `app` area for a driving area of its own.
+An *entry* is a place where the outside world starts the code: `main`, an HTTP handler, a queue consumer. arch needs the list of entries because everything hangs off it: the flows it draws start there, and since ADR 0027 the *side* of a module (driving, domain, driven: the three columns of a hexagon map) is read from whether the module holds one. Today the spec knows two ways to find an entry besides `main`: a table of frameworks (axum, actix, …) and a generic rule for callbacks. Neither sees the most common background job there is: `main` starts a loop on the side with `tokio::spawn` and that loop polls a table forever. Both service fixtures have one (smallsvc's outbox worker, zero2prod's newsletter delivery worker), and today the analyzer shows them as a dashed "hands off" link from `main` and no entry, so smallsvc's notify flow starts nowhere. One analogy: a restaurant has a front door and a delivery hatch at the back; the hatch is not on the list of doors because nobody rings there, the kitchen opened it itself in the morning, yet work comes in through it all day. This ADR adds that hatch as a third entry kind, the **spawned worker**: a function started once at start-up through a spawn call, which then loops for the life of the process. Checking the wording filed in tau-rs/arch-design#7 against real code changed it in two places: the loop is often one call below the spawned function (zero2prod's own worker, which the filed wording would have missed), and "awaits a shutdown signal" was dropped because it turns a three-line ctrl-c listener into an entry. Where things stand: with this rule both fixture workers are entries at full confidence, zero2prod's worker module is definitely driving, and smallsvc's `worker.rs` leaves the `app` area for a driving area of its own.
 
 ## Context
 
@@ -14,7 +14,7 @@ An *entry* is a place where the outside world starts the code: `main`, an HTTP h
 - [ADR 0009](0009-confidence-levels.md): every fact is `resolved`, `guessed` or `declared`; a finding on a guessed fact warns, never blocks. `hands off` is one of the link kinds guessed from patterns; spawn paths are folded to a pill (MAP-16).
 - [ADR 0027](0027-arch-init-sides-rule.md) reads entries from the fact model and left two rows conditional on this decision: zero2prod `issue_delivery_worker` and smallsvc `src/worker.rs`.
 - The arch-analyze lane (tau-rs/arch#3) emits today, for smallsvc: a `hands off` link `main → run_outbox_worker` (guessed, reason `tokio::spawn`) and no entry.
-- The definition filed in #7: "a function reachable from `main` only through `tokio::spawn` / `std::thread::spawn` (or an executor's equivalent) whose body loops or awaits a shutdown signal; `resolved` when the spawn is in `main`'s closure, `guessed` otherwise".
+- The definition filed in tau-rs/arch-design#7: "a function reachable from `main` only through `tokio::spawn` / `std::thread::spawn` (or an executor's equivalent) whose body loops or awaits a shutdown signal; `resolved` when the spawn is in `main`'s closure, `guessed` otherwise".
 
 ### The filed definition against real code
 
@@ -77,10 +77,10 @@ smallsvc then has the entries fixtures expects (`main`, the axum handlers, the w
 
 | row in ADR 0027 | was | now |
 |---|---|---|
-| zero2prod `issue_delivery_worker` | "driving if #7 is accepted as filed; driven otherwise" | **driving**, definite (clause 1, holds an entry) |
-| smallsvc `src/worker.rs` | "domain today; driving if #7 is accepted as filed"; listed under `app` | **driving**, as its own area `worker` (a top-level module, ADR 0027 decision 1) |
+| zero2prod `issue_delivery_worker` | "driving if tau-rs/arch-design#7 is accepted as filed; driven otherwise" | **driving**, definite (clause 1, holds an entry) |
+| smallsvc `src/worker.rs` | "domain today; driving if tau-rs/arch-design#7 is accepted as filed"; listed under `app` | **driving**, as its own area `worker` (a top-level module, ADR 0027 decision 1) |
 
-smallsvc's `areas.toml` changes by one area; the file as it stands no longer matches the computed sides until fixtures moves the path (arch-fixtures #3):
+smallsvc's `areas.toml` changes by one area; the file as it stands no longer matches the computed sides until fixtures moves the path (arch-fixtures tau-rs/arch-design#3):
 
 ```toml
 [[area]]
@@ -93,7 +93,7 @@ order = 1
 name = "worker"
 side = "driving"
 paths = ["src/worker.rs"]
-order = 2                                       # after http; the order rule itself is #24
+order = 2                                       # after http; the order rule itself is tau-rs/arch-design#24
 ```
 
 Every other row of both tables is unchanged. ADR 0027's sentence "every side in the file is reproduced" holds again once that edit lands.
@@ -102,10 +102,10 @@ Every other row of both tables is unchanged. ADR 0027's sentence "every side in 
 
 - Spec §7 gains the third kind by reference to this ADR; ADR 0027 gains a pointer; nothing is renumbered. `arch-analyze` (tau-rs/arch#3) implements decisions 1–10 and keeps the `hands off` link.
 - MAP-26 is unchanged: in a bin unit `main` is already an entry, so this kind adds entries and never changes the column rule by itself.
-- One honest consequence: **the definition is not the one filed in #7.** It is wider in one place (the loop may be one direct call away, inside the module) and narrower in two ("awaits a shutdown signal" is gone; the spawn must be on the start-up path and outside an unbounded loop). The filed wording missed zero2prod's worker, the very case it was filed for.
+- One honest consequence: **the definition is not the one filed in tau-rs/arch-design#7.** It is wider in one place (the loop may be one direct call away, inside the module) and narrower in two ("awaits a shutdown signal" is gone; the spawn must be on the start-up path and outside an unbounded loop). The filed wording missed zero2prod's worker, the very case it was filed for.
 - A second honest consequence: **smallsvc's worker becomes driving and is clean; zero2prod's is not.** `run_outbox_worker` only calls `services.notify.drain` (driving → domain, with the grain). zero2prod's worker runs SQL itself ("externals only from driven") and calls `email_client` and `startup::get_connection_pool`, so it gets the same day-one findings as its routes, as ADR 0027 said it would.
 - A third honest consequence: **`while` is counted as unbounded without looking at its condition.** A one-shot start-up task whose module has a `while i < n` on its direct-call path becomes a worker entry. Rare (three other conditions must hold), wrong when it happens, and at `resolved` if spawned in `main`. Rejected: reading loop conditions, which is a termination proof arch cannot give.
 - A fourth honest consequence: **an inline `async move { loop { … } }` in `main` gives no entry.** Its work shows as part of `main`'s flow. Extracting the block into a function makes it one. Rejected: an entry without an item, which changes the fact model for a case the user fixes in one refactor.
 - A fifth honest consequence: **a guessed entry still sets a side.** ADR 0027 reads entries whatever their confidence, so a module whose only entry is a worker spawned by a builder comes out driving on a guess; findings that depend on it follow ADR 0009 (warn, never block) and the override in `areas.toml` is the answer.
 - Not covered, on purpose: a supervisor (a spawned function that spawns the loops itself, having no loop of its own), a worker started only from another worker, and executors outside the table. Each shows as a `hands off` link and no entry; the table grows by ADR when a fixture needs it.
-- The framework table has fixtures only for axum and actix (arch-fixtures #8); the spawn table has fixtures for `tokio::spawn` only. A `std::thread::spawn` worker fixture belongs with that issue.
+- The framework table has fixtures only for axum and actix (arch-fixtures tau-rs/arch-design#8); the spawn table has fixtures for `tokio::spawn` only. A `std::thread::spawn` worker fixture belongs with that issue.

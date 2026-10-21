@@ -1,6 +1,6 @@
 # Findings · from:fixtures
 
-Each row is filed in `tau-rs/arch-design` as a `from:fixtures` issue (moved in #7); the status carries the link.
+Each row is filed in `tau-rs/arch-design` as a `from:fixtures` issue (moved in tau-rs/arch-fixtures#7); the status carries the link.
 New findings are filed there first, labelled `from:fixtures`. Rows cite V1 spec §13 decision n as ADR n.
 
 | id | finding | evidence | proposal | status |

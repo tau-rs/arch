@@ -17,9 +17,9 @@ An item is a box the map can draw and an end a link can land on, so two things m
 
 ## Decision
 
-**What is an item (#5).** Everything rust-analyzer calls an item, including associated items (methods, associated consts and types), which carry `parent`: the id of their `impl` or `trait`. `impl` blocks are items of kind `impl`, folded under their type on the map. Enum variants and struct fields are not items: a link that touches one (`matches-on`, `holds`, `reads`, `constructs`) targets the type and carries the member's bare name in `Link.member`.
+**What is an item (tau-rs/arch-design#5).** Everything rust-analyzer calls an item, including associated items (methods, associated consts and types), which carry `parent`: the id of their `impl` or `trait`. `impl` blocks are items of kind `impl`, folded under their type on the map. Enum variants and struct fields are not items: a link that touches one (`matches-on`, `holds`, `reads`, `constructs`) targets the type and carries the member's bare name in `Link.member`.
 
-**Item ids (#22).**
+**Item ids (tau-rs/arch-design#22).**
 
 | case | id | smallsvc |
 |---|---|---|

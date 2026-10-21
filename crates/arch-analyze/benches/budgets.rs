@@ -98,7 +98,7 @@ fn new_fn(name: &'static str) -> impl Fn(&Facts) -> bool {
 
 fn main() -> ExitCode {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let fixture = manifest.join("../../fixtures/arch-fixtures/repos/smallsvc");
+    let fixture = manifest.join("../../fixtures/repos/smallsvc");
     if !fixture.join("Cargo.toml").is_file() {
         eprintln!(
             "{} is missing: run scripts/fetch-fixtures.sh",

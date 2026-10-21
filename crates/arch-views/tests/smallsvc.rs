@@ -12,8 +12,7 @@ use arch_facts::{
 use arch_views::check_rules;
 
 fn smallsvc() -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/arch-fixtures/repos/smallsvc");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/repos/smallsvc");
     assert!(
         dir.join(".arch/rules").is_file(),
         "{} is missing: run scripts/fetch-fixtures.sh",

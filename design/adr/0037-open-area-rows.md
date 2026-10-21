@@ -2,7 +2,7 @@
 
 - Date: 2026-10-21
 - Status: accepted
-- Source: tau-rs/arch-design#132 (found while defining the V1 lints, #123); makes precise [ADR 0031](0031-items-and-item-ids.md)'s "`impl` blocks … folded under their type on the map"
+- Source: tau-rs/arch-design#132 (found while defining the V1 lints, tau-rs/arch-design#123); makes precise [ADR 0031](0031-items-and-item-ids.md)'s "`impl` blocks … folded under their type on the map"
 
 ## In plain words
 

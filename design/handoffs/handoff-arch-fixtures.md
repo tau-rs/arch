@@ -1,6 +1,6 @@
 # handoff · `tau-rs/arch-fixtures` · test data and invariants
 
-> Amended 2026-10-03 from FINDINGS F-4, F-8, F-10 (tau-rs/arch-design#9, #12, #14): zed lib roots by cargo `lib.path`; six UI states; smallsvc in-tree.
+> Amended 2026-10-03 from FINDINGS F-4, F-8, F-10 (tau-rs/arch-design#9, tau-rs/arch-design#12, tau-rs/arch-design#14): zed lib roots by cargo `lib.path`; six UI states; smallsvc in-tree.
 
 Purpose: the shared ground truth for `arch`, `arch-app` and `sett`. Real repositories pinned by commit, the facts arch must extract from them (golden files), the views it must compute, and the invariant and performance checks. Separate repo because it is large, slow-moving, and consumed by three others.
 

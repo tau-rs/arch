@@ -11,8 +11,7 @@ const ELEMENT: &str = "e0e1e2e3";
 
 /// A git repo copied from smallsvc, with a plan whose element may write `src/app/pay.rs`.
 fn worktree() -> (tempfile::TempDir, PathBuf) {
-    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/arch-fixtures/repos/smallsvc");
+    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/repos/smallsvc");
     assert!(
         src.join("Cargo.toml").is_file(),
         "{} is missing: run scripts/fetch-fixtures.sh",

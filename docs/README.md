@@ -1,6 +1,6 @@
 # docs
 
-Crate-level design notes. Each links to arch-design ADRs by number (`tau-rs/arch-design/adr/`).
+Crate-level design notes. Each links to ADRs by number (`design/adr/`).
 
 - [arch-facts](arch-facts.md) — the fact model and the published `schemas/facts.schema.json`
 - [arch-views](arch-views.md) — placement and dependency-rule findings, what `arch check` reports

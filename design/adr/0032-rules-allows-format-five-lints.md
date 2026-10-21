@@ -75,7 +75,7 @@ Why (tau-rs/arch#13): the smallsvc shape already parses in both repos and states
 
 ## Consequences
 
-- tau-rs/arch (#75): `Rules::v1_template()` writes `"warn"` instead of `true`, the reader stops accepting `true`/`false`, and the two schemas are published. arch-fixtures: nothing left (arch-fixtures#12 renamed the lints).
+- tau-rs/arch (tau-rs/arch-design#75): `Rules::v1_template()` writes `"warn"` instead of `true`, the reader stops accepting `true`/`false`, and the two schemas are published. arch-fixtures: nothing left (arch-fixtures#12 renamed the lints).
 - What each lint checks is not decided here: tau-rs/arch-design#123.
 - [ADR 0006](0006-arch-init.md) and the **lint** and **allow** entries of `spec/vocabulary.md` point here.
 - One honest consequence: an allow names its rule by wording, so rewording a rule, or renaming an area it names, detaches the allow and the finding comes back. It fails safe: a stale allow shows a finding, it never hides one.

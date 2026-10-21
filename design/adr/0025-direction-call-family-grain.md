@@ -54,7 +54,7 @@ Before and after on smallsvc (hexagon):
 
 ## Consequences
 
-- The fixtures harness narrows `direction_left_to_right` to call-family links between columned items and reads the grain from `rule`; smallsvc yields zero direction smells, and a handler calling an adapter directly yields one. The check keeps citing MAP-17/26 (arch-fixtures #5).
+- The fixtures harness narrows `direction_left_to_right` to call-family links between columned items and reads the grain from `rule`; smallsvc yields zero direction smells, and a handler calling an adapter directly yields one. The check keeps citing MAP-17/26 (arch-fixtures tau-rs/arch-design#5).
 - `arch-views` computes the smell set per rule; the `direction` lint (F-2, tau-rs/arch#13) is the finding form of the same set and follows ADR 0009 (guessed warns, declared never gates).
 - sett's map stories need both grains: "layers direction (public API left)" stays (spec §12); hexagon stories show inward.
 - One honest consequence: the direction rule cannot tell a driven adapter that *maps* domain values from one that *runs domain logic*; both are driven → domain calls and both are with the grain. Catching the second is a lint's job, not a drawing rule's.

@@ -724,8 +724,8 @@ fn an_agent_that_dies_mid_turn_leaves_the_cursor_where_it_was() {
 
 #[test]
 fn the_context_pack_reaches_the_element_and_the_judge() {
-    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures/arch-fixtures/golden/smallsvc/facts.json");
+    let golden =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/golden/smallsvc/facts.json");
     let facts: Facts =
         serde_json::from_str(&std::fs::read_to_string(&golden).unwrap_or_else(|e| {
             panic!("{}: {e}; run scripts/fetch-fixtures.sh", golden.display())

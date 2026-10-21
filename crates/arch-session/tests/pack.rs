@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use arch_facts::{ArchDir, ElementId, Facts, Gate, Group, Plan, SessionId};
 
 fn fixtures() -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/arch-fixtures");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
     assert!(
         dir.join("golden/smallsvc/facts.json").is_file(),
         "{} has no golden/smallsvc/facts.json: run scripts/fetch-fixtures.sh",

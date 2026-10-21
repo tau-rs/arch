@@ -1,6 +1,6 @@
 # Map invariants · MAP-1…33, CANVAS-1…2
 
-The contract the map keeps for every flow, as testable statements, one owner and one check each. Answers arch-fixtures FINDINGS.md F-1 and F-9 (tau-rs/arch-design#8, #13). Sources: `flows/map-focus.html` (MAP-1…28), `flows/map-real-projects.html` (MAP-25…29), `handoffs/handoff-visualizer-poc.md` (MAP-30, 31, CANVAS-1, 2), `handoffs/handoff-sett-rebase.md` (MAP-32), [ADR 0037](../adr/0037-open-area-rows.md) (MAP-33), spec §5 for every amendment. Spec §5 wins over a page where they differ.
+The contract the map keeps for every flow, as testable statements, one owner and one check each. Answers arch-fixtures FINDINGS.md F-1 and F-9 (tau-rs/arch-design#8, tau-rs/arch-design#13). Sources: `flows/map-focus.html` (MAP-1…28), `flows/map-real-projects.html` (MAP-25…29), `handoffs/handoff-visualizer-poc.md` (MAP-30, 31, CANVAS-1, 2), `handoffs/handoff-sett-rebase.md` (MAP-32), [ADR 0037](../adr/0037-open-area-rows.md) (MAP-33), spec §5 for every amendment. Spec §5 wins over a page where they differ.
 
 **Owners.** *fixtures*: checkable from a golden facts/views pair; the check is a function in `arch-fixtures/checks/invariants.rs` (names in the table; existing ones are marked). *app* / *sett*: a story test in `arch-app` or `sett`, run against `fixtures-for-ui/`; the table says what the story asserts. *V2*: holds vacuously in V1 (one unit, no profiles); the check exists where it is cheap and bites in V2. *dropped* / *superseded*: kept in the numbering, never checked.
 
@@ -49,7 +49,7 @@ The contract the map keeps for every flow, as testable statements, one owner and
 | CANVAS-1 | Node tiers by on-screen width with the same thresholds everywhere, mini 110 · chip 380 · card 760 · open 900 px, hysteresis 40; a swap cross-fades; the camera moves; the node never resizes itself. | thresholds fixed in spec §5 (the PoC's 160/420 are superseded) | app / sett | story: zoom continuously, record tier swaps at the four thresholds ± 40, assert the node box is constant |
 | CANVAS-2 | Ports come from facts (every port has a witness external); an edge to an external ends on that external's port. V2: sockets on the board. | V1: ports on the rails (MAP-31/32) | fixtures | `ports_from_facts` |
 
-## Checks to add in `arch-fixtures/checks/invariants.rs` (arch-fixtures #5)
+## Checks to add in `arch-fixtures/checks/invariants.rs` (arch-fixtures tau-rs/arch-design#5)
 
 `columns_are_sides` · `folded_link_counts` · `reach_depth` · `column_rule_from_entry` · `externals_on_rails` · `rail_docking_moves_nothing` · `ports_from_facts` · `rows_fold_into_owner`; and `direction_left_to_right` narrowed to the five directed kinds with the grain read from `rule` (ADR 0025, ADR 0033). Existing and unchanged: `positions_stable` · `no_state_relayout` · `fold_floor` · `overlay_stacking` · `unresolved_one_pill` · `cross_unit_on_public_surface`; `finding_confidence` (ADR 0009) and `origin_is_core` (spec §3) are not MAP numbers and stay.
 

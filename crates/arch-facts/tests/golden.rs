@@ -3,7 +3,7 @@
 //! `docs/arch-facts.md`).
 //!
 //! Runs on `schemas/examples/facts.minimal.json` always, and on every
-//! `fixtures/arch-fixtures/golden/<repo>/facts.json` present under the pin.
+//! `fixtures/golden/<repo>/facts.json` present in the tree.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -131,35 +131,18 @@ fn the_published_example_round_trips_through_the_store() {
     round_trip(&repo_root().join("schemas/examples/facts.minimal.json"));
 }
 
-/// The arch-fixtures commit pinned in `fixtures/pin.toml`, if any.
-fn pinned_commit() -> Option<String> {
-    let pin = std::fs::read_to_string(repo_root().join("fixtures/pin.toml")).unwrap();
-    let section = pin.split("[arch-fixtures]").nth(1)?.split("\n[").next()?;
-    let commit = section
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("commit"))?;
-    let commit = commit
-        .trim_start_matches([' ', '='])
-        .trim()
-        .trim_start_matches('"');
-    let commit = commit.split('"').next()?.trim();
-    (!commit.is_empty()).then(|| commit.to_string())
-}
-
-/// `fixtures/arch-fixtures/`, which must be present when a commit is pinned
-/// (`scripts/fetch-fixtures.sh`); `None` when nothing is pinned yet.
-fn fixtures_root() -> Option<PathBuf> {
-    let commit = pinned_commit()?;
-    let dir = repo_root().join("fixtures/arch-fixtures");
+/// `fixtures/` at the repo root: `golden/<repo>/` and `repos/<repo>/` live in this tree.
+fn fixtures_root() -> PathBuf {
+    let dir = repo_root().join("fixtures");
     assert!(
         dir.join("golden").is_dir(),
-        "fixtures/pin.toml pins arch-fixtures at {commit} but {} is missing: run scripts/fetch-fixtures.sh",
+        "{} has no golden/",
         dir.display()
     );
-    Some(dir)
+    dir
 }
 
-/// `golden/<repo>/sizes.json` as arch-fixtures publishes it; `items` and `links` are null until
+/// `fixtures/golden/<repo>/sizes.json` as the fixtures publish it; `items` and `links` are null until
 /// arch-analyze fills them.
 #[derive(serde::Deserialize)]
 struct Sizes {
@@ -170,11 +153,8 @@ struct Sizes {
 }
 
 #[test]
-fn every_pinned_golden_repo_has_sizes_and_its_facts_round_trip_through_the_store() {
-    let Some(root) = fixtures_root() else {
-        eprintln!("fixtures/pin.toml pins no arch-fixtures commit yet");
-        return;
-    };
+fn every_golden_repo_has_sizes_and_its_facts_round_trip_through_the_store() {
+    let root = fixtures_root();
     let mut repos = 0;
     for entry in std::fs::read_dir(root.join("golden")).unwrap() {
         let dir = entry.unwrap().path();
@@ -212,7 +192,9 @@ fn every_pinned_golden_repo_has_sizes_and_its_facts_round_trip_through_the_store
                 );
             }
         } else {
-            eprintln!("{name}: sizes.json only; facts.json arrives with arch-analyze (#9)");
+            eprintln!(
+                "{name}: sizes.json only; facts.json arrives with arch-analyze (tau-rs/arch#9)"
+            );
         }
     }
     assert!(
@@ -223,7 +205,7 @@ fn every_pinned_golden_repo_has_sizes_and_its_facts_round_trip_through_the_store
 
 #[test]
 fn smallsvc_dot_arch_files_parse_with_the_readers() {
-    let Some(root) = fixtures_root() else { return };
+    let root = fixtures_root();
     let arch = ArchDir::of_repo(&root.join("repos/smallsvc"));
     assert!(arch.exists(), "smallsvc has a .arch/");
 

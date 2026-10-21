@@ -2,7 +2,7 @@
 
 - Date: 2026-10-04
 - Status: accepted
-- Source: tau-rs/arch-design#130 (arch-app FINDINGS F-3 to F-5, sent to tau-rs/arch#7), decided by the user on #130 (2026-10-04); completes [ADR 0023](0023-settings-errors-secrets-packaging-telemetry.md) "the API schema is their contract" and amends HANDOFF §2 "published as an artifact of every release"
+- Source: tau-rs/arch-design#130 (arch-app FINDINGS F-3 to F-5, sent to tau-rs/arch#7), decided by the user on tau-rs/arch-design#130 (2026-10-04); completes [ADR 0023](0023-settings-errors-secrets-packaging-telemetry.md) "the API schema is their contract" and amends HANDOFF §2 "published as an artifact of every release"
 
 ## In plain words
 
@@ -16,7 +16,7 @@ One analogy: arch-app already built the plug, and this ADR writes the socket's s
 sequenceDiagram
   participant App as arch-app engine host
   participant E as arch serve (cwd = repo root)
-  App->>App: arch --version → "arch <semver>" (else not trusted, #45)
+  App->>App: arch --version → "arch <semver>" (else not trusted, tau-rs/arch-design#45)
   App->>E: spawn `arch serve`, cwd = repo root
   E->>E: bind <dir>/<hash8(realpath(root))>.sock
   App->>E: connect · {"jsonrpc":"2.0","id":…,"method":"initialize","params":{"client":"arch-app","schemaVersion":"0.1.0"}}
@@ -111,18 +111,18 @@ Why semver and not the integer the other schemas use: with an integer bumped on 
 ### 5. Deferred
 
 - **Windows.** `arch serve` reports that it is unsupported on Windows until a named-pipe lane exists. The path in §2 stays the target.
-- **The app method set over MCP for agents** (HANDOFF §2, "same handlers"). `arch mcp` is scoped to one session element ([ADR 0012](0012-confinement-driver-hooks.md), #117). The surface that serves the app methods to an agent is decided when the first method after `initialize` is added (tau-rs/arch#7), together with #127's CLI list.
+- **The app method set over MCP for agents** (HANDOFF §2, "same handlers"). `arch mcp` is scoped to one session element ([ADR 0012](0012-confinement-driver-hooks.md), tau-rs/arch-design#117). The surface that serves the app methods to an agent is decided when the first method after `initialize` is added (tau-rs/arch#7), together with tau-rs/arch-design#127's CLI list.
 
 ## Consequences
 
-- tau-rs/arch #7:
+- tau-rs/arch tau-rs/arch-design#7:
   - Slice (a): `schemas/arch-api.json` with `initialize` only and `x-arch-events: []`, at `0.1.0`.
   - Slice (b): `arch serve` binds §2 and answers `initialize`.
-  - Slice (c): views, intents, sessions (the `session_*` methods of #127), Ask and settings, each announced here before it ships, as a minor version or with a major-version ADR.
+  - Slice (c): views, intents, sessions (the `session_*` methods of tau-rs/arch-design#127), Ask and settings, each announced here before it ships, as a minor version or with a major-version ADR.
 - arch-app:
   - Resolves the repo root's real path before `socketPathFor`.
   - Moves `schema.lock.json` off `"none"` once slice (a) merges.
   - Reads compatibility as in §4.
-- arch-fixtures: `fixtures-for-ui/<state>/responses/initialize.json` (#44) carries `schemaVersion` in this format.
+- arch-fixtures: `fixtures-for-ui/<state>/responses/initialize.json` (tau-rs/arch-design#44) carries `schemaVersion` in this format.
 - `arch-api.json` does not follow the integer `schema_version` of `facts.schema.json` and `check.schema.json`. Those are documents read whole, while this is an API whose readers need to know whether an addition is safe.
 - handoffs/handoff-arch.md §2 points here instead of "an artifact of every release".

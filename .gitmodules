@@ -1,12 +1,12 @@
 [submodule "repos/ripgrep"]
-	path = repos/ripgrep
+	path = fixtures/repos/ripgrep
 	url = https://github.com/BurntSushi/ripgrep.git
 	shallow = true
 [submodule "repos/zero2prod"]
-	path = repos/zero2prod
+	path = fixtures/repos/zero2prod
 	url = https://github.com/LukeMathWalker/zero-to-production.git
 	shallow = true
 [submodule "repos/zed"]
-	path = repos/zed
+	path = fixtures/repos/zed
 	url = https://github.com/zed-industries/zed.git
 	shallow = true

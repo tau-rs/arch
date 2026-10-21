@@ -2,7 +2,7 @@
 
 - Date: 2026-10-04
 - Status: accepted
-- Source: tau-rs/arch-design#123, decided by the user on #123 (2026-10-04); completes [ADR 0032](0032-rules-allows-format-five-lints.md) "what each lint checks is not decided here"
+- Source: tau-rs/arch-design#123, decided by the user on tau-rs/arch-design#123 (2026-10-04); completes [ADR 0032](0032-rules-allows-format-five-lints.md) "what each lint checks is not decided here"
 
 ## In plain words
 
@@ -61,7 +61,7 @@ speculative-abstraction
 - **Confidence** ([ADR 0009](0009-confidence-levels.md)). A `cycle` finding keeps its level only when every link of its cut is `resolved`. `unresolved-dyn` reads `wires`, which is guessed, so it warns and never blocks whatever its level.
 - **Dropped from the earlier page.** The age in `EventSink, 1 impl · 9 months`: no source recommends it, and it needs git history the facts do not key on ([ADR 0002](0002-keys-commit-hash-deltas.md)). The fix card may still show the trait's age.
 
-Why (#123): each condition is the one practitioners and the research already use for that smell, narrowed so a clean hexagon, the shape `arch init` sets up, gets no finding; and each counts something the style of the code does not inflate, so a codebase of many small functions gets the same findings as one of few large ones.
+Why (tau-rs/arch-design#123): each condition is the one practitioners and the research already use for that smell, narrowed so a clean hexagon, the shape `arch init` sets up, gets no finding; and each counts something the style of the code does not inflate, so a codebase of many small functions gets the same findings as one of few large ones.
 
 ## Consequences
 
