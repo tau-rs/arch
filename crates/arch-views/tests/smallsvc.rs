@@ -1,5 +1,5 @@
-//! The sample service's own `.arch/` files, read from the pinned arch-fixtures checkout
-//! (`scripts/fetch-fixtures.sh`), against the links its one planted violation produces:
+//! The sample service's own `.arch/` files, read from `fixtures/repos/smallsvc`, against the
+//! links its one planted violation produces:
 //! `app::notify` reaching for `adapters::email::LogNotifier`, listed in `.arch/allows`.
 //! The links are hand-built here, copied from the analyzer's output; no analyzer in this crate.
 
@@ -15,7 +15,7 @@ fn smallsvc() -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/repos/smallsvc");
     assert!(
         dir.join(".arch/rules").is_file(),
-        "{} is missing: run scripts/fetch-fixtures.sh",
+        "{} is missing",
         dir.display()
     );
     dir

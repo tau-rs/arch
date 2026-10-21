@@ -14,7 +14,7 @@ fn worktree() -> (tempfile::TempDir, PathBuf) {
     let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/repos/smallsvc");
     assert!(
         src.join("Cargo.toml").is_file(),
-        "{} is missing: run scripts/fetch-fixtures.sh",
+        "{} is missing",
         src.display()
     );
     let dir = tempfile::tempdir().unwrap();

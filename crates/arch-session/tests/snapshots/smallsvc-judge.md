@@ -1,6 +1,6 @@
 # Context pack · smallsvc
 
-Unit `unit:smallsvc`, built from `bin:orderly`, at `ff41a0de9ec0bf6878c46b118b025f50cd30c373`.
+Unit `unit:smallsvc`, built from `bin:orderly`, at `d89c106a9925d5283bfeaf2954ba98147d4c263e`.
 Facts are type-checked, analyzed for `x86_64-unknown-linux-gnu` (pinned in `.arch/areas.toml`).
 
 ## Map
