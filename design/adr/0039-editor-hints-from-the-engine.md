@@ -67,7 +67,7 @@ Why: the hints the pill wants are already computed on this machine, for this rep
 
 ## Consequences
 
-- tau-rs/arch: `editor.didChange` and `editor.inlayHints` in `schemas/arch-api.json` at `0.2.0`, served by `arch serve`, with `unsaved_buffer_changes_no_facts`; filed as its own issue, needed before arch-app milestone 3's editor pill.
+- tau-rs/arch: `editor.didChange` and `editor.inlayHints` in `schemas/arch-api.json` at `0.2.0`, served by `arch serve`, with `unsaved_buffer_changes_no_facts`: tau-rs/arch#192, needed before arch-app milestone 3's editor pill.
 - tau-rs/arch-app (`for:arch-app`): regenerate `arch-client` at `0.2.0`; `arch-editor` registers a Monaco `InlayHintsProvider` for Rust models that sends `editor.didChange` on content change and asks `editor.inlayHints` for the visible range; the hint is drawn with sett's `editor.css` classes in rule 12's pill. No `@theia/plugin-ext`, no `@theia/plugin-ext-vscode`. FINDINGS.md F-1 → answered.
 - [ADR 0034](0034-arch-api-wire-contract.md): these are the first methods after `initialize`; they are editor-only and are never served over MCP, so §5's open question (the app method set over MCP) stays open for the view methods.
 - Spec §6 and §8 cite this ADR; spec §8 now also says Theia's extension host is out of V1.
