@@ -3,6 +3,7 @@
 - Date: 2026-10-04
 - Status: accepted
 - Source: tau-rs/arch-design#130 (arch-app FINDINGS F-3 to F-5, sent to tau-rs/arch#7), decided by the user on tau-rs/arch-design#130 (2026-10-04); completes [ADR 0023](0023-settings-errors-secrets-packaging-telemetry.md) "the API schema is their contract" and amends HANDOFF §2 "published as an artifact of every release"
+- Settled since: tau-rs/arch#109 is decided (2026-10-23): the first methods after `initialize` are `editor.didChange` and `editor.inlayHints`, schema `0.2.0` ([ADR 0039](0039-editor-hints-from-the-engine.md)); editor-only, never served over MCP, so §5's question about the app method set over MCP stays open for the view methods
 
 ## In plain words
 

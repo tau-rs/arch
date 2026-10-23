@@ -38,7 +38,7 @@ design/
 
 ## ADRs
 
-Synced-to line for the other repos: **ADR 0038** (2026-10-22). Later decisions are added as 0039, 0040, …
+Synced-to line for the other repos: **ADR 0039** (2026-10-23). Later decisions are added as 0040, 0041, …
 
 | # | decision |
 |---|---|
@@ -80,6 +80,7 @@ Synced-to line for the other repos: **ADR 0038** (2026-10-22). Later decisions a
 | [0036](adr/0036-engine-binary-name.md) | Engine binary: stays `arch`; a candidate is the engine only if `--version` prints `arch <semver>` first; the packaged app runs its bundled engine before `PATH` |
 | [0037](adr/0037-open-area-rows.md) | Rows in an open area: one per top-level item; `impl` blocks and methods fold into their type's row (`Item.self_type`), `private` loose items into their module's row; rows start closed, open on demand |
 | [0038](adr/0038-workspace-trust-off.md) | Workspace trust: off in V1 (`security.workspace.trust.enabled: false`), nothing drawn or stored; opening a repository in arch runs its build scripts and proc macros, as `cargo build` would |
+| [0039](adr/0039-editor-hints-from-the-engine.md) | Editor hints: rust-analyzer's inlay hints come from the engine over `arch-api` (`editor.didChange` · `editor.inlayHints`, schema `0.2.0`); no Theia extension host, no second rust-analyzer in V1; an unsaved buffer never produces facts |
 ## Flow pages
 
 | page | what it is |
