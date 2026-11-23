@@ -11,6 +11,24 @@ This directory is **the record**: the one place where the product's decisions li
 - The flow pages are the visual spec. A page is superseded by moving it to `flows/superseded/`, never by editing it in place; a new page is a new file.
 - Plain text, no build step, no generated content. Diagrams are the HTML pages or Mermaid in Markdown.
 
+## Workflow
+
+The process is three standard practices together. They are named here so that a newcomer recognises it:
+
+- **ADRs in Michael Nygard's format.** One file per decision under `adr/`, numbered and dated: `Date` · `Status` · `Context` · `Decision` · `Consequences`. Since ADR 0039, each ADR also opens with an *In plain words* section. An ADR is never edited once accepted. A later ADR amends or supersedes it and says so in its header.
+- **Spec first.** `spec/` and `flows/` say what the product does. A decision is an ADR before it is code (see Rules).
+- **GitHub issues and PRs are the work ledger.** Status is read from GitHub, never kept in a file: to do is open issues, in flight is open PRs and assigned issues, shipped is merged PRs and closed issues. Every PR carries `Closes #NNN`. Labels are `status:ready` · `status:gated` (with the reason) · `release-blocker`. Work another repo must do carries `for:<repo>`, and a question from another repo carries `from:<repo>`.
+
+```mermaid
+flowchart LR
+  Q["issue: a question<br/>(from:repo / decision)"] --> A["ADR in adr/<br/>spec amended"]
+  A --> W["issue: the work<br/>(status:ready)"]
+  W --> P["PR: Closes #NNN"]
+  P --> M["merged: issue closes"]
+```
+
+No spec-driven tool (OpenSpec or similar) is used. Its specs, change proposals and task lists would be a second record, kept by hand, next to `spec/`, `adr/` and the issues, and the two would drift apart.
+
 ## Repo map
 
 ```
